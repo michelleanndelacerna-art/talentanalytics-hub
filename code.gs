@@ -161,6 +161,8 @@ function implementApprovedChange(requestId) {
             positionid: rowData[headerMap.get('NewPositionID')],
             employeeid: employeeId, // Use the potentially retrieved employeeId
             employeename: rowData[headerMap.get('EmployeeName')],
+            datehired: rowData[headerMap.get('DateHired')],
+            dateofbirth: rowData[headerMap.get('DateOfBirth')],
             status: requestType,
             startdateinposition: rowData[headerMap.get('EffectiveDate')]
           };
@@ -379,6 +381,46 @@ function getChangeRequests() {
     // *** Log errors from the TOP-LEVEL try...catch ***
     Logger.log('FATAL Error in getChangeRequests (outer catch): ' + e.message + ' Stack: ' + e.stack);
     // Explicitly return null to mimic potential implicit behavior on unhandled errors
+    return null;
+  }
+}
+
+
+function getEmployeeDetails(employeeName) {
+  if (!employeeName) {
+    return null;
+  }
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const mainSheet = ss.getSheets()[0];
+    if (mainSheet.getLastRow() < 2) {
+      return null;
+    }
+    const data = mainSheet.getRange(2, 1, mainSheet.getLastRow() - 1, mainSheet.getLastColumn()).getValues();
+    const headers = mainSheet.getRange(1, 1, 1, mainSheet.getLastColumn()).getValues()[0];
+    const empNameIndex = headers.indexOf('Employee Name');
+    const empIdIndex = headers.indexOf('Employee ID');
+    const dateHiredIndex = headers.indexOf('Date Hired');
+    const dobIndex = headers.indexOf('Date of Birth');
+
+    if (empNameIndex === -1 || empIdIndex === -1 || dateHiredIndex === -1 || dobIndex === -1) {
+      return null;
+    }
+
+    const employeeRow = data.find(row => (row[empNameIndex] || '').toString().trim() === employeeName.trim());
+
+    if (employeeRow) {
+      const dateHired = employeeRow[dateHiredIndex] instanceof Date ? Utilities.formatDate(employeeRow[dateHiredIndex], Session.getScriptTimeZone(), 'yyyy-MM-dd') : null;
+      const dateOfBirth = employeeRow[dobIndex] instanceof Date ? Utilities.formatDate(employeeRow[dobIndex], Session.getScriptTimeZone(), 'yyyy-MM-dd') : null;
+      return {
+        employeeId: employeeRow[empIdIndex],
+        dateHired: dateHired,
+        dateOfBirth: dateOfBirth
+      };
+    }
+    return null;
+  } catch (e) {
+    Logger.log(`Error in getEmployeeDetails: ${e.toString()}`);
     return null;
   }
 }
@@ -3488,8 +3530,16 @@ function submitChangeRequest(requestData) {
           return 'Pending';
         case 'SupportingDocuments':
           return folderUrl;
+        // --- NEW: Explicitly handle the new fields ---
+        case 'EmployeeID':
+          return requestData.EmployeeID || '';
+        case 'DateHired':
+          return requestData.DateHired || '';
+        case 'DateOfBirth':
+          return requestData.DateOfBirth || '';
         default:
-          return requestData[header] || '';
+          // Use a more robust check for other fields
+          return requestData.hasOwnProperty(header) ? requestData[header] : '';
       }
     });
     
