@@ -4652,10 +4652,15 @@ function handleRequestTypeChange() {
     case 'Internal Transfer':
       fieldsHtml = `
         <div><label class="block font-medium">Employee</label><div id="employee-request-dropdown" class="searchable-dropdown"></div></div>
-        <div><label class="block font-medium">Current Position ID</label><input type="text" id="current-position-id" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div><label class="block font-medium">Employee ID</label><input type="text" id="request-EmployeeID" name="EmployeeID" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+          <div><label class="block font-medium">Date Hired</label><input type="text" id="request-DateHired" name="DateHired" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+          <div><label class="block font-medium">Date of Birth</label><input type="text" id="request-DateOfBirth" name="DateOfBirth" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        </div>
+        <div><label class="block font-medium">Current Position ID</label><input type="text" id="current-position-id" name="CurrentPositionID" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
         <div><label class="block font-medium">New Position ID</label><div id="new-position-dropdown" class="searchable-dropdown"></div></div>
-        <div><label class="block font-medium">Effective Date</label><input type="date" id="effective-date-request" class="mt-1 p-2 w-full border rounded"></div>
-        <div><label class="block font-medium">Justification</label><textarea id="justification" class="mt-1 p-2 w-full border rounded"></textarea></div>
+        <div><label class="block font-medium">Effective Date</label><input type="date" id="effective-date-request" name="EffectiveDate" class="mt-1 p-2 w-full border rounded"></div>
+        <div class="md:col-span-2"><label class="block font-medium">Justification</label><textarea id="justification" name="Justification" class="mt-1 p-2 w-full border rounded"></textarea></div>
         ${fileUploadHtml}
       `;
       break;
@@ -4694,14 +4699,36 @@ function handleRequestTypeChange() {
 
   // Populate dropdowns
   if (requestType.includes('Transfer') || requestType.includes('Promotion')) {
-    createSearchableDropdown('employee-request-dropdown', dropdownListData.managers || [], 'name', 'id', (employeeId) => {
-      const employee = fullEmployeeData.find(e => e.employeeId === employeeId);
+    createSearchableDropdown('employee-request-dropdown', dropdownListData.managers || [], 'name', 'name', (employeeName) => { // Use name for lookup
+      const employee = fullEmployeeData.find(e => e.employeeName === employeeName);
       if (employee) {
         document.getElementById('current-position-id').value = employee.positionId;
+        
+        // --- NEW: Call backend to get more details ---
+        google.script.run
+          .withSuccessHandler(details => {
+            if (details) {
+              document.getElementById('request-EmployeeID').value = details.employeeId || '';
+              document.getElementById('request-DateHired').value = details.dateHired || '';
+              document.getElementById('request-DateOfBirth').value = details.dateOfBirth || '';
+            }
+          })
+          .getEmployeeDetails(employeeName);
+
+      } else {
+        // Clear fields if no employee is found (e.g., input cleared)
+         document.getElementById('current-position-id').value = '';
+         document.getElementById('request-EmployeeID').value = '';
+         document.getElementById('request-DateHired').value = '';
+         document.getElementById('request-DateOfBirth').value = '';
       }
     });
     const vacantPositions = fullEmployeeData.filter(p => !p.employeeId).map(p => p.positionId);
-    createSearchableDropdown('new-position-dropdown', vacantPositions, null, null, null);
+    createSearchableDropdown('new-position-dropdown', vacantPositions, null, null, (val) => {
+        const input = document.querySelector('#new-position-dropdown .searchable-dropdown-input');
+        input.name = "NewPositionID";
+        input.value = val;
+    });
   }
   if (requestType.includes('newly created')) {
     createSearchableDropdown('new-job-title-dropdown', dropdownListData.jobtitle || [], null, null, null);
