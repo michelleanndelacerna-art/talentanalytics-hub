@@ -570,18 +570,18 @@ function handleSheetChange(e) {
   if (['EDIT', 'INSERT_ROW', 'REMOVE_ROW'].indexOf(e.changeType) === -1) {
     return;
   }
-  // --- FIX: Check for the lock and exit if it's active ---
-  const scriptProperties = PropertiesService.getScriptProperties();
-  if (scriptProperties.getProperty('scriptChangeLock')) {
-    Logger.log('Skipping handleSheetChange because scriptChangeLock is active.');
-    return;
-  }
   const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(15000);
-    logDataChanges();
-  } finally {
-    lock.releaseLock();
+  // Attempt to acquire the lock for a short period.
+  // If it fails, it means another process (like implementApprovedChange) is holding it.
+  // In that case, we should exit and let the main process handle the logic.
+  if (lock.tryLock(500)) {
+    try {
+      logDataChanges();
+    } finally {
+      lock.releaseLock();
+    }
+  } else {
+    Logger.log('Skipping handleSheetChange because another process is holding the lock.');
   }
 }
 
