@@ -79,9 +79,20 @@ function processRequestAction(requestId, action, comments) {
   }
 }
 
+function logToSheet(message) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let logSheet = ss.getSheetByName("Debug Log");
+  if (!logSheet) {
+    logSheet = ss.insertSheet("Debug Log");
+    logSheet.appendRow(["Timestamp", "Message"]);
+  }
+  const timestamp = new Date();
+  logSheet.appendRow([timestamp, message]);
+}
+
 function implementApprovedChange(requestId) {
   try {
-    Logger.log(`Starting implementation for request ID: ${requestId}`);
+    logToSheet(`Starting implementation for request ID: ${requestId}`);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName('Org Chart Requests');
     if (!sheet) {
@@ -98,26 +109,63 @@ function implementApprovedChange(requestId) {
       if (data[i][requestIdCol] === requestId) {
         requestFound = true;
         const rowData = data[i];
-        Logger.log(`Found request data in row ${i + 1}: ${JSON.stringify(rowData.map(cell => cell instanceof Date ? cell.toISOString() : cell))}`);
+        logToSheet(`Found request data in row ${i + 1}: ${JSON.stringify(rowData.map(cell => cell instanceof Date ? cell.toISOString() : cell))}`);
 
 
         const requestType = rowData[headerMap.get('RequestType')];
-        Logger.log(`Request type: ${requestType}`);
+        logToSheet(`Request type: ${requestType}`);
         let dataToSave = {};
         let mode = 'edit'; // Default to edit
 
         // --- IMPLEMENTATION LOGIC ---
         if (requestType.includes('Transfer') || requestType.includes('Promotion')) {
-          Logger.log('Processing Transfer/Promotion logic.');
+          logToSheet('Processing Transfer/Promotion logic.');
+          
+          let employeeId = rowData[headerMap.get('EmployeeID')];
+
+          // --- FIX: If EmployeeID is missing, look it up from the main sheet using CurrentPositionID ---
+          if (!employeeId) {
+            logToSheet('EmployeeID is missing from request. Attempting lookup via CurrentPositionID.');
+            if (!headerMap.has('CurrentPositionID')) {
+                throw new Error("The 'Org Chart Requests' sheet is missing the required 'CurrentPositionID' column.");
+            }
+            const currentPositionId = rowData[headerMap.get('CurrentPositionID')]; 
+            if (currentPositionId) {
+              const mainSheet = ss.getSheets()[0];
+              const mainData = mainSheet.getDataRange().getValues();
+              const mainHeaders = mainData[0];
+              const posIdIndex = mainHeaders.indexOf('Position ID');
+              const empIdIndex = mainHeaders.indexOf('Employee ID');
+
+              if (posIdIndex === -1 || empIdIndex === -1) {
+                  throw new Error("Could not find 'Position ID' or 'Employee ID' columns in the main data sheet.");
+              }
+
+              for (let j = 1; j < mainData.length; j++) {
+                if (mainData[j][posIdIndex] === currentPositionId) {
+                  employeeId = mainData[j][empIdIndex];
+                  logToSheet(`Found EmployeeID "${employeeId}" for CurrentPositionID "${currentPositionId}".`);
+                  break;
+                }
+              }
+            }
+            if (!employeeId) {
+              const errorMessage = `CRITICAL: Could not find a valid EmployeeID to transfer. Looked in CurrentPositionID: "${currentPositionId || 'Not Provided'}".`;
+              logToSheet(errorMessage);
+              throw new Error(errorMessage);
+            }
+          }
+          // --- END FIX ---
+
           dataToSave = {
             positionid: rowData[headerMap.get('NewPositionID')],
-            employeeid: rowData[headerMap.get('EmployeeID')],
+            employeeid: employeeId, // Use the potentially retrieved employeeId
             employeename: rowData[headerMap.get('EmployeeName')],
             status: requestType,
             startdateinposition: rowData[headerMap.get('EffectiveDate')]
           };
         } else if (requestType.includes('replacement for vacancy')) {
-          Logger.log('Processing Replacement for Vacancy logic.');
+          logToSheet('Processing Replacement for Vacancy logic.');
           dataToSave = {
             positionid: rowData[headerMap.get('VacantPositionID')],
             employeeid: rowData[headerMap.get('NewEmployeeID')],
@@ -126,12 +174,12 @@ function implementApprovedChange(requestId) {
             startdateinposition: rowData[headerMap.get('EffectiveDate')]
           };
         } else if (requestType.includes('newly created position')) {
-          Logger.log('Processing Newly Created Position logic.');
+          logToSheet('Processing Newly Created Position logic.');
           const division = rowData[headerMap.get('Division')];
           const section = rowData[headerMap.get('Section')];
-          Logger.log(`Generating new position ID for Division: ${division}, Section: ${section}`);
+          logToSheet(`Generating new position ID for Division: ${division}, Section: ${section}`);
           const newPositionId = generateNewPositionId(division, section);
-          Logger.log(`Generated new Position ID: ${newPositionId}`);
+          logToSheet(`Generated new Position ID: ${newPositionId}`);
           if (newPositionId.startsWith('ERROR')) {
             throw new Error('Could not generate new Position ID: ' + newPositionId);
           }
@@ -152,28 +200,28 @@ function implementApprovedChange(requestId) {
           mode = 'add';
         }
         
-        Logger.log(`Data to save: ${JSON.stringify(dataToSave)}, mode: ${mode}`);
+        logToSheet(`Data to save: ${JSON.stringify(dataToSave)}, mode: ${mode}`);
 
         // Call the existing save function to apply the change
         if (Object.keys(dataToSave).length > 0) {
-          Logger.log(`Attempting to save data for request ${requestId}...`);
+          logToSheet(`Attempting to save data for request ${requestId}...`);
           const saveResult = saveEmployeeData(dataToSave, mode);
-          Logger.log(`Save operation completed for request ${requestId}. Result: ${saveResult}`);
+          logToSheet(`Save operation completed for request ${requestId}. Result: ${saveResult}`);
 
           // It's good practice to check the result, even if saveEmployeeData currently throws errors on failure.
           // This makes the code more robust if saveEmployeeData is changed to return a status object in the future.
           if (saveResult.includes('successfully')) {
-            Logger.log('Updating implementation details in "Org Chart Requests" sheet.');
+            logToSheet('Updating implementation details in "Org Chart Requests" sheet.');
             sheet.getRange(i + 1, headerMap.get('Status') + 1).setValue('Implemented');
             sheet.getRange(i + 1, headerMap.get('ImplementerEmail') + 1).setValue(Session.getActiveUser().getEmail());
             sheet.getRange(i + 1, headerMap.get('ImplementationTimestamp') + 1).setValue(new Date());
-            Logger.log('Implementation details updated.');
+            logToSheet('Implementation details updated.');
           } else {
              // If saveEmployeeData returns an error message instead of throwing an error.
             throw new Error(`Save operation failed for request ${requestId}: ${saveResult}`);
           }
         } else {
-            Logger.log('No data to save for this request type.');
+            logToSheet('No data to save for this request type.');
         }
 
         SpreadsheetApp.flush(); // Ensure all pending changes are written before returning
@@ -186,7 +234,7 @@ function implementApprovedChange(requestId) {
     }
 
   } catch (e) {
-    Logger.log('FATAL Error in implementApprovedChange: ' + e.message + ' Stack: ' + e.stack);
+    logToSheet('FATAL Error in implementApprovedChange: ' + e.message + ' Stack: ' + e.stack);
     return { success: false, error: 'Failed to implement request. ' + e.message };
   }
 }
@@ -537,7 +585,7 @@ function logDataChanges() {
 
   let timestamp = new Date();
   if (overrideTimestamp) {
-    timestamp = new Date(overrideTimestamp + 'T12:00:00');
+    timestamp = new Date(overrideTimestamp);
     scriptProperties.deleteProperty('overrideTimestamp');
   }
 
@@ -1440,9 +1488,9 @@ function generateNewPositionId(division, section) {
 
 
 function saveEmployeeData(dataObject, mode) {
-    Logger.log(`--- saveEmployeeData Started ---`);
-    Logger.log(`Mode: ${mode}`);
-    Logger.log(`Received dataObject: ${JSON.stringify(dataObject)}`);
+    logToSheet(`--- saveEmployeeData Started ---`);
+    logToSheet(`Mode: ${mode}`);
+    logToSheet(`Received dataObject: ${JSON.stringify(dataObject)}`);
 
     const lock = LockService.getScriptLock();
     lock.waitLock(30000);
@@ -1452,14 +1500,14 @@ function saveEmployeeData(dataObject, mode) {
 
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const mainSheet = ss.getSheets()[0];
-        Logger.log(`Target sheet: "${mainSheet.getName()}"`);
+        logToSheet(`Target sheet: "${mainSheet.getName()}"`);
         const headers = mainSheet.getRange(1, 1, 1, mainSheet.getLastColumn()).getValues()[0];
         const keyMap = {};
         headers.forEach((header, i) => {
             const key = header.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/gi, '');
             keyMap[key] = i;
         });
-        Logger.log(`Header key map generated: ${JSON.stringify(keyMap)}`);
+        logToSheet(`Header key map generated: ${JSON.stringify(keyMap)}`);
 
         // Convert all incoming string data to uppercase for consistency, except for specific fields
         for (const key in dataObject) {
@@ -1485,11 +1533,11 @@ function saveEmployeeData(dataObject, mode) {
             const empIdIndex = headers.indexOf('Employee ID');
             for (let i = 1; i < allData.length; i++) {
                 const row = allData[i];
-                if ((String(row[empIdIndex]) || '').toUpperCase() === dataObject.employeeid.toUpperCase() && (String(row[posIdIndex]) || '').toUpperCase() !== dataObject.positionid.toUpperCase()) {
+                if ((String(row[empIdIndex]) || '').toUpperCase() === String(dataObject.employeeid).toUpperCase() && (String(row[posIdIndex]) || '').toUpperCase() !== dataObject.positionid.toUpperCase()) {
                     const oldRowIndex = i + 1;
                     isTransfer = true;
                     oldPositionIdForTransfer = row[posIdIndex];
-                    transferredEmployeeId = dataObject.employeeid.toUpperCase();
+                    transferredEmployeeId = String(dataObject.employeeid).toUpperCase();
                     if (dataObject.startdateinposition) {
                         scriptProperties.setProperties({
                             'pendingResignationPosId': oldPositionIdForTransfer.toUpperCase(),
@@ -1545,20 +1593,20 @@ function saveEmployeeData(dataObject, mode) {
             }
         } else if (mode === 'edit') {
             const positionId = dataObject.positionid;
-            Logger.log(`EDIT mode: Searching for Position ID "${positionId}" in column A.`);
+            logToSheet(`EDIT mode: Searching for Position ID "${positionId}" in column A.`);
             const positionIdColValues = mainSheet.getRange("A2:A" + mainSheet.getLastRow()).getValues();
             const rowIndex = positionIdColValues.findIndex(r => r[0] == positionId) + 2;
 
             if (rowIndex < 2) { // rowIndex will be 1 if not found, since we add 2
-              Logger.log(`ERROR: Position ID "${positionId}" not found in column A. Aborting save.`);
+              logToSheet(`ERROR: Position ID "${positionId}" not found in column A. Aborting save.`);
               throw new Error(`Position ID ${positionId} not found for editing.`);
             }
-            Logger.log(`Position ID found at row index: ${rowIndex}.`);
+            logToSheet(`Position ID found at row index: ${rowIndex}.`);
 
             const rangeToUpdate = mainSheet.getRange(rowIndex, 1, 1, headers.length);
-            Logger.log(`Range to update is: ${rangeToUpdate.getA1Notation()}`);
+            logToSheet(`Range to update is: ${rangeToUpdate.getA1Notation()}`);
             const existingRowData = rangeToUpdate.getValues()[0];
-            Logger.log(`Existing data in row: ${JSON.stringify(existingRowData)}`);
+            logToSheet(`Existing data in row: ${JSON.stringify(existingRowData)}`);
             const originalStatus = existingRowData[keyMap['status']];
             const originalEmployeeId = existingRowData[keyMap['employeeid']];
 
@@ -1593,9 +1641,9 @@ function saveEmployeeData(dataObject, mode) {
                     existingRowData[keyMap[key]] = dataObject[key];
                 }
             }
-            Logger.log(`Data to be written to sheet: ${JSON.stringify(existingRowData)}`);
+            logToSheet(`Data to be written to sheet: ${JSON.stringify(existingRowData)}`);
             rangeToUpdate.setValues([existingRowData]);
-            Logger.log(`setValues() called successfully on range ${rangeToUpdate.getA1Notation()}.`);
+            logToSheet(`setValues() called successfully on range ${rangeToUpdate.getA1Notation()}.`);
 
             if (dataObject.status === 'RESIGNED') {
                 let resignationSheet = ss.getSheetByName('Resignation Data');
@@ -1663,7 +1711,7 @@ function saveEmployeeData(dataObject, mode) {
 
         return "Data saved successfully.";
     } catch (e) {
-        Logger.log('Error in saveEmployeeData: ' + e.message + ' Stack: ' + e.stack);
+        logToSheet('Error in saveEmployeeData: ' + e.message + ' Stack: ' + e.stack);
         throw new Error('Failed to save data. ' + e.message);
     } finally {
         scriptProperties.deleteProperty('scriptChangeLock');
@@ -1691,7 +1739,7 @@ function deactivatePosition(positionId) {
 
     return "Position deactivated successfully.";
   } catch (e) {
-    Logger.log('Error in deactivatePosition: ' + e.message + ' Stack: ' + e.stack);
+    logToSheet('Error in deactivatePosition: ' + e.message + ' Stack: ' + e.stack);
     throw new Error('Failed to deactivate position. ' + e.message);
   } finally {
     lock.releaseLock();
