@@ -5409,7 +5409,8 @@ function handleImplementAction(requestId) {
       if (response && response.success) {
         alert(response.message); // Show the success message from the backend
         // Full data refresh to update the main org chart and remove the implemented item from the approvals list.
-        fetchData(); 
+        fetchData();
+        drawApprovalsTable();
       } else {
         // If the backend returns a structured error, display it. Otherwise, show a generic failure message.
         alert('Implementation Failed: ' + (response ? response.error : 'An unknown error occurred on the server.'));
