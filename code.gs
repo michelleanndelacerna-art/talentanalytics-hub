@@ -1926,8 +1926,8 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
         incumbentName: (row[nameIndex] || '').toString().trim() || 'N/A',
         jobTitle: (row[jobTitleIndex] || '').toString().trim() || 'N/A',
         hireDate: _parseDate(row[hireDateIndex]),
-        isEffective: !!_parseDate(row[effectiveDateIndex]),
-        status: row[headers.indexOf('Status')]
+        status: (row[statusIndex] || '').toString().trim().toUpperCase(), // Store the status.
+        isEffective: !!_parseDate(row[effectiveDateIndex])
       }))
       .filter(e => e.eventDate)
       .sort((a, b) => a.eventDate.getTime() - b.eventDate.getTime());
@@ -1944,13 +1944,10 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
       }
 
       let startDate = startEvent.eventDate;
-      const status = (startEvent.status || '').toUpperCase();
-      const movementStatuses = ['PROMOTION', 'INTERNAL TRANSFER', 'LATERAL TRANSFER', 'FILLED VACANCY'];
-
-      if (movementStatuses.includes(status)) {
-        startDate = startEvent.eventDate; // For movements, always use the event date
+      // *** MODIFIED START DATE LOGIC ***
+      if (internalMovementStatus.includes(startEvent.status)) {
+        startDate = startEvent.eventDate;
       } else if (startEvent.hireDate && startEvent.hireDate.getTime() < startEvent.eventDate.getTime()) {
-        // Fallback to original logic for other cases (like new hires or blank statuses)
         if (isFirstEverEventForEmployee(startEvent.incumbentId, startEvent.eventDate, allLogData)) {
           startDate = startEvent.hireDate;
         }
