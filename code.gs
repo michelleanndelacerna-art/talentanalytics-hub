@@ -1916,7 +1916,9 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
   const timestampIndex = headers.indexOf('Change Timestamp');
   const effectiveDateIndex = headers.indexOf('Effective Date');
   const hireDateIndex = headers.indexOf('Date Hired');
+  const statusIndex = headers.indexOf('Status'); // Get the 'Status' column index.
 
+  // Helper to determine if this is the very first recorded event for an employee across all positions.
   const isFirstEverEventForEmployee = (employeeId, eventDate, allLogs) => {
     for (const row of allLogs) {
       const logEmpId = (row[empIdIndex] || '').toString().trim();
@@ -1940,6 +1942,7 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
   });
 
   const finalHistory = {};
+  const internalMovementStatus = ['PROMOTION', 'INTERNAL TRANSFER', 'LATERAL TRANSFER', 'FILLED VACANCY'];
 
   for (const posId in positions) {
     const logEntries = positions[posId];
@@ -1951,6 +1954,7 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
         incumbentName: (row[nameIndex] || '').toString().trim() || 'N/A',
         jobTitle: (row[jobTitleIndex] || '').toString().trim() || 'N/A',
         hireDate: _parseDate(row[hireDateIndex]),
+        status: (row[statusIndex] || '').toString().trim().toUpperCase(), // Store the status.
         isEffective: !!_parseDate(row[effectiveDateIndex])
       }))
       .filter(e => e.eventDate)
@@ -1968,7 +1972,10 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
       }
 
       let startDate = startEvent.eventDate;
-      if (startEvent.hireDate && startEvent.hireDate.getTime() < startEvent.eventDate.getTime()) {
+      // *** MODIFIED START DATE LOGIC ***
+      if (internalMovementStatus.includes(startEvent.status)) {
+        startDate = startEvent.eventDate;
+      } else if (startEvent.hireDate && startEvent.hireDate.getTime() < startEvent.eventDate.getTime()) {
         if (isFirstEverEventForEmployee(startEvent.incumbentId, startEvent.eventDate, allLogData)) {
           startDate = startEvent.hireDate;
         }
@@ -1980,14 +1987,12 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
 
       for (let j = i; j < allChangeEventsForPos.length; j++) {
         const currentEvent = allChangeEventsForPos[j];
-
         if (currentEvent.incumbentId !== startEvent.incumbentId) {
           endDate = currentEvent.eventDate;
           tenureEndingEvent = currentEvent;
           nextEventIndex = j;
           break;
         }
-
         if (currentEvent.isEffective && currentEvent.incumbentId === startEvent.incumbentId) {
           endDate = currentEvent.eventDate;
           tenureEndingEvent = currentEvent;
@@ -2005,7 +2010,6 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
       }
 
       const lastEventOfThisTenure = allChangeEventsForPos[nextEventIndex - 1];
-
       historyRecords.push({
         startDate: startDate,
         endDate: endDate,
@@ -2014,10 +2018,8 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
         jobTitle: lastEventOfThisTenure.jobTitle,
         hireDate: startEvent.hireDate
       });
-
       i = nextEventIndex;
     }
-
     const changeCount = historyRecords.length;
     historyRecords.forEach(rec => rec.changeCount = changeCount);
     finalHistory[posId] = historyRecords;
