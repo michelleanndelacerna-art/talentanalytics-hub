@@ -288,100 +288,72 @@ function getRequestCounts() {
 }
 
 function getChangeRequests() {
-  // Add a top-level try...catch for broader error capture
   try {
-    Logger.log('getChangeRequests function started.');
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName('Org Chart Requests');
     if (!sheet || sheet.getLastRow() < 2) {
-      Logger.log('Sheet "Org Chart Requests" not found or empty.');
-      // Explicitly return an object with empty arrays if sheet is bad
       return { myRequests: [], approvals: [] };
     }
+
     const data = sheet.getDataRange().getValues();
-    const headers = data.shift();
+    const rawHeaders = data.shift();
+    // *** FIX: Normalize headers to be robust against case/spacing issues ***
+    const headers = rawHeaders.map(h => (h || '').toString().trim().toLowerCase().replace(/\s+/g, ''));
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
-    Logger.log('Current User Email (lowercase, trimmed): ' + userEmail);
 
-    const supportDocIndex = headers.indexOf('SupportingDocuments');
-    const requestorEmailIndex = headers.indexOf('RequestorEmail');
-    const approverEmailIndex = headers.indexOf('ApproverEmail');
-    const statusIndex = headers.indexOf('Status');
+    // *** FIX: Use the normalized headers to find indices ***
+    const headerMap = new Map(headers.map((h, i) => [h, i]));
+    const requestorEmailIndex = headerMap.get('requestoremail');
+    const approverEmailIndex = headerMap.get('approveremail');
+    const statusIndex = headerMap.get('status');
+    const submissionTimestampIndex = headerMap.get('submissiontimestamp');
+    const supportDocIndex = headerMap.get('supportingdocuments');
 
-    if (requestorEmailIndex === -1 || approverEmailIndex === -1 || statusIndex === -1) {
-        Logger.log("Error in getChangeRequests: Missing required columns (RequestorEmail, ApproverEmail, or Status). Header row: " + headers.join(', '));
-        throw new Error("Missing required columns in 'Org Chart Requests' sheet.");
+    if (requestorEmailIndex === undefined || approverEmailIndex === undefined || statusIndex === undefined || submissionTimestampIndex === undefined) {
+      throw new Error(`One or more required columns are missing in 'Org Chart Requests'. Found: ${rawHeaders.join(', ')}`);
     }
-
-    let requestCount = 0;
 
     const requests = data.map(row => {
       const request = {};
-      headers.forEach((header, i) => {
-        // Handle specific data types before storing
-        if (i === supportDocIndex && row[i]) {
-          request[header] = `<a href="${row[i]}" target="_blank">View Documents</a>`;
-        } else if ((header.includes('Timestamp') || header === 'ApprovalTimestamp') && row[i] instanceof Date) {
-            // Use ISO string for timestamps for reliable transfer
-            request[header] = row[i].toISOString();
-        } else if (header === 'EffectiveDate' && row[i] instanceof Date) {
-             // Format effective date as YYYY-MM-DD
-             request[header] = Utilities.formatDate(row[i], Session.getScriptTimeZone(), 'yyyy-MM-dd');
-        }
-         else {
-          // Store other values as they are (likely strings or numbers)
-          request[header] = row[i];
+      // *** FIX: Iterate over original headers to maintain original case in the output object ***
+      rawHeaders.forEach((header, i) => {
+        let value = row[i];
+        if (i === supportDocIndex && value) {
+          request[header] = `<a href="${value}" target="_blank">View Documents</a>`;
+        } else if ((header.toLowerCase().includes('timestamp') || header.toLowerCase().includes('date')) && value instanceof Date) {
+          request[header] = value.toISOString();
+        } else {
+          request[header] = value;
         }
       });
-      requestCount++;
-      // const rowEmail = (request.RequestorEmail || '').toString().toLowerCase().trim(); // Keep commented out for now
-      // Logger.log(`Row ${requestCount}: Read RequestorEmail: '${rowEmail}'`);
       return request;
     });
 
-    Logger.log(`Total requests processed before filtering: ${requestCount}`);
-
     const myRequests = requests.filter(r =>
-        (r.RequestorEmail || '').toString().toLowerCase().trim() === userEmail
+      (r.RequestorEmail || '').toString().toLowerCase().trim() === userEmail
     );
 
     const approvals = requests.filter(r => {
-        const status = (r.Status || '').toString().toLowerCase().trim();
-        return (status === 'pending' || status === 'approved' || status === 'implemented') &&
-               (r.ApproverEmail || '').toString().toLowerCase().trim() === userEmail;
+      const status = (r.Status || '').toString().toLowerCase().trim();
+      return (status === 'pending' || status === 'approved' || status === 'implemented') &&
+             (r.ApproverEmail || '').toString().toLowerCase().trim() === userEmail;
     });
 
-    Logger.log(`Number of requests matched for 'My Requests': ${myRequests.length}`);
-    Logger.log(`Number of requests matched for 'Approvals': ${approvals.length}`);
-
-
     const sortByTimestampDesc = (a, b) => {
-        // Compare ISO strings directly
-        const dateA = a.SubmissionTimestamp || '1970-01-01T00:00:00.000Z';
-        const dateB = b.SubmissionTimestamp || '1970-01-01T00:00:00.000Z';
-        // Simple string comparison works for ISO dates (descending)
-        if (dateB < dateA) return -1;
-        if (dateB > dateA) return 1;
-        return 0;
+      const dateA = a.SubmissionTimestamp ? new Date(a.SubmissionTimestamp) : new Date(0);
+      const dateB = b.SubmissionTimestamp ? new Date(b.SubmissionTimestamp) : new Date(0);
+      return dateB - dateA;
     };
 
     myRequests.sort(sortByTimestampDesc);
     approvals.sort(sortByTimestampDesc);
 
-    const resultObject = { myRequests, approvals }; // Create the object to return
-
-    // *** ADD LOGGING BEFORE RETURN ***
-    // Use JSON.stringify for a clear view of the structure and types being returned
-    Logger.log('Object structure being returned: ' + JSON.stringify(resultObject, null, 2));
-
-    Logger.log('getChangeRequests function finished successfully.');
-    return resultObject; // Return the object
+    return { myRequests, approvals };
 
   } catch (e) {
-    // *** Log errors from the TOP-LEVEL try...catch ***
-    Logger.log('FATAL Error in getChangeRequests (outer catch): ' + e.message + ' Stack: ' + e.stack);
-    // Explicitly return null to mimic potential implicit behavior on unhandled errors
-    return null;
+    Logger.log('FATAL Error in getChangeRequests: ' + e.message + ' Stack: ' + e.stack);
+    // Return a structured error object for the frontend to handle gracefully
+    return { error: e.message, myRequests: [], approvals: [] };
   }
 }
 
@@ -4067,13 +4039,13 @@ function getPreviewOrgChartData(requestId) {
       }
 
       if (newPosition) {
-        newPosition.employeeid = employeeId;
-        newPosition.employeename = employeeName;
-        newPosition.status = requestType.toUpperCase();
+        // --- MODIFICATION ---
+        // Do not change the state of the target position.
+        // Just highlight it and label it as the target.
         newPosition.isPreviewChange = true;
-        newPosition.changeType = requestType.toUpperCase() + ' - ' + employeeName;
-        newPosition.effectiveDate = effectiveDate ? Utilities.formatDate(new Date(effectiveDate), Session.getScriptTimeZone(), 'yyyy-MM-dd') : null;
+        newPosition.changeType = `TARGET POSITION FOR ${employeeName}`;
         changedPositionIds.add(newPosition.positionid);
+        // --- END MODIFICATION ---
       } else {
         Logger.log(`Warning: New position ${newPositionId} not found during preview generation.`);
       }
