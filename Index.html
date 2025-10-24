@@ -4673,9 +4673,9 @@ function handleRequestTypeChange() {
         <div><label class="block font-medium">New Position Job Title</label><div id="new-job-title-dropdown" class="searchable-dropdown"></div></div>
         <div><label class="block font-medium">New Position Level</label><div id="new-level-dropdown" class="searchable-dropdown"></div></div>
         <div><label class="block font-medium">Reporting To</label><div id="reporting-to-request-dropdown" class="searchable-dropdown"></div></div>
-        <div><label class="block font-medium">New Employee Name</label><input type="text" id="new-employee-name" class="mt-1 p-2 w-full border rounded"></div>
-        <div><label class="block font-medium">New Employee ID</label><input type="text" id="new-employee-id" class="mt-1 p-2 w-full border rounded"></div>
-        <div><label class="block font-medium">Justification</label><textarea id="justification" class="mt-1 p-2 w-full border rounded" rows="3"></textarea></div>
+        <div><label class="block font-medium">Reporting To Employee ID</label><input type="text" id="reporting-to-id-request" name="ReportingToId" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        <div><label class="block font-medium">Position Status</label><div id="position-status-request-dropdown" class="searchable-dropdown"></div></div>
+        <div class="md:col-span-2"><label class="block font-medium">Justification</label><textarea id="justification" name="Justification" class="mt-1 p-2 w-full border rounded" rows="3"></textarea></div>
         ${fileUploadHtml}
       `;
       break;
@@ -4731,9 +4731,21 @@ function handleRequestTypeChange() {
     });
   }
   if (requestType.includes('newly created')) {
-    createSearchableDropdown('new-job-title-dropdown', dropdownListData.jobtitle || [], null, null, null);
-    createSearchableDropdown('new-level-dropdown', dropdownListData.level || [], null, null, null);
-    createSearchableDropdown('reporting-to-request-dropdown', dropdownListData.managers || [], 'name', 'id', null);
+    createSearchableDropdown('new-job-title-dropdown', dropdownListData.jobtitle || [], null, null, (val) => {
+        const input = document.querySelector('#new-job-title-dropdown .searchable-dropdown-input');
+        input.name = "NewJobTitle";
+    });
+    createSearchableDropdown('new-level-dropdown', dropdownListData.level || [], null, null, (val) => {
+        const input = document.querySelector('#new-level-dropdown .searchable-dropdown-input');
+        input.name = "NewLevel";
+    });
+    createSearchableDropdown('reporting-to-request-dropdown', dropdownListData.managers || [], 'name', 'id', (employeeId) => {
+      document.getElementById('reporting-to-id-request').value = employeeId;
+    });
+    createSearchableDropdown('position-status-request-dropdown', ['Active', 'Inactive'], null, null, (val) => {
+        const input = document.querySelector('#position-status-request-dropdown .searchable-dropdown-input');
+        input.name = "PositionStatus";
+    });
 
     // Dependent dropdowns for new position location
     createSearchableDropdown('request-division-dropdown', dropdownListData.divisions || [], null, null, (sel) => updateRequestLocationDropdowns('division', sel));
@@ -4800,11 +4812,12 @@ function submitRequest() {
       Group: document.querySelector('#request-group-dropdown .searchable-dropdown-input')?.value,
       Department: document.querySelector('#request-department-dropdown .searchable-dropdown-input')?.value,
       Section: document.querySelector('#request-section-dropdown .searchable-dropdown-input')?.value,
-      ReportingToId: document.querySelector('#reporting-to-request-dropdown .searchable-dropdown-input')?.dataset.value,
+      ReportingToId: document.getElementById('reporting-to-id-request')?.value,
+      PositionStatus: document.querySelector('#position-status-request-dropdown .searchable-dropdown-input')?.value,
       VacantPositionID: document.querySelector('#vacant-position-dropdown .searchable-dropdown-input')?.value,
-      NewEmployeeName: document.getElementById('new-employee-name')?.value,
-      NewEmployeeID: document.getElementById('new-employee-id')?.value,
-      files: fileContents // Attach file contents
+      NewEmployeeName: '', // These are no longer used for 'newly created position'
+      NewEmployeeID: '',   // These are no longer used for 'newly created position'
+      files: fileContents
     };
     
     showSavingOverlay('Submitting Request...');
