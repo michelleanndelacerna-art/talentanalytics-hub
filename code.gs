@@ -195,9 +195,10 @@ function implementApprovedChange(requestId) {
             department: rowData[headerMap.get('Department')],
             section: section,
             reportingtoid: rowData[headerMap.get('ReportingToId')],
-            status: 'NEW HIRE',
-            employeename: rowData[headerMap.get('NewEmployeeName')],
-            employeeid: rowData[headerMap.get('NewEmployeeID')],
+            status: 'VACANT',
+            employeename: '',
+            employeeid: '',
+            positionstatus: rowData[headerMap.get('PositionStatus')] || 'Active'
           };
           mode = 'add';
         }
@@ -3511,6 +3512,8 @@ function submitChangeRequest(requestData) {
           return requestData.DateHired || '';
         case 'DateOfBirth':
           return requestData.DateOfBirth || '';
+        case 'PositionStatus':
+            return requestData.PositionStatus || '';
         default:
           // Use a more robust check for other fields
           return requestData.hasOwnProperty(header) ? requestData[header] : '';
