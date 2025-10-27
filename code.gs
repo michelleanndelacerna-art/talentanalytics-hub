@@ -197,7 +197,7 @@ function implementApprovedChange(requestId) {
           const mainHeaders = mainData[0];
           const mainEmpIdIndex = mainHeaders.indexOf('Employee ID');
           const mainEmpNameIndex = mainHeaders.indexOf('Employee Name');
-
+          
           if (mainEmpIdIndex > -1 && mainEmpNameIndex > -1) {
               for (let j = 1; j < mainData.length; j++) {
                   // Ensure case-insensitive and trim comparison
@@ -323,7 +323,7 @@ function getChangeRequests() {
       Logger.log('Sheet "Org Chart Requests" not found or empty.');
       return { myRequests: [], approvals: [] };
     }
-
+    
     const data = sheet.getDataRange().getValues();
     const headers = data.shift(); // Keep original headers for object keys
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
