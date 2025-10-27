@@ -4868,6 +4868,10 @@ function submitRequest() {
       VacantPositionID: document.querySelector('#vacant-position-dropdown .searchable-dropdown-input')?.value,
       NewEmployeeName: document.getElementById('new-employee-name')?.value,
       NewEmployeeID: document.getElementById('new-employee-id')?.value,
+      VacantPositionID: document.querySelector('#vacant-position-dropdown .searchable-dropdown-input')?.value,
+      NewEmployeeName: '', // These are no longer used for 'newly created position'
+      NewEmployeeID: '',   // These are no longer used for 'newly created position'
+      files: fileContents
     };
     
     // For replacement requests, overwrite/add fields with data from the readonly inputs
