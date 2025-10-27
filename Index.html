@@ -4686,7 +4686,7 @@ function handleRequestTypeChange() {
     case 'Hiring of a new employee (replacement for vacancy)':
       fieldsHtml = `
         <div class="md:col-span-2"><label class="block font-medium">Vacant Position ID</label><div id="vacant-position-dropdown" class="searchable-dropdown"></div></div>
-
+        
         <div><label class="block font-medium">Job Title</label><input type="text" id="request-job-title" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
         <div><label class="block font-medium">Reporting To</label><input type="text" id="request-reporting-to" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
         <div><label class="block font-medium">Reporting To ID</label><input type="text" id="request-reporting-to-id" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
@@ -4703,7 +4703,7 @@ function handleRequestTypeChange() {
         <div><label class="block font-medium">New Employee Name</label><input type="text" id="new-employee-name" name="NewEmployeeName" class="mt-1 p-2 w-full border rounded"></div>
         <div><label class="block font-medium">New Employee ID</label><input type="text" id="new-employee-id" name="NewEmployeeID" class="mt-1 p-2 w-full border rounded"></div>
         <div><label class="block font-medium">Effective Date</label><input type="date" id="effective-date-request" name="EffectiveDate" class="mt-1 p-2 w-full border rounded"></div>
-
+        
         <div class="md:col-span-2"><label class="block font-medium">Justification</label><textarea id="justification" name="Justification" class="mt-1 p-2 w-full border rounded"></textarea></div>
         ${fileUploadHtml}
       `;
@@ -4899,7 +4899,7 @@ function submitRequest() {
         requestData.ContractType = document.getElementById('request-contract-type')?.value;
         requestData.PositionStatus = document.getElementById('request-position-status')?.value;
     }
-
+    
     showSavingOverlay('Submitting Request...');
 
     google.script.run
