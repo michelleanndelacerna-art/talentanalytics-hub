@@ -4659,6 +4659,10 @@ function handleRequestTypeChange() {
         </div>
         <div><label class="block font-medium">Current Position ID</label><input type="text" id="current-position-id" name="CurrentPositionID" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
         <div><label class="block font-medium">New Position ID</label><div id="new-position-dropdown" class="searchable-dropdown"></div></div>
+        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><label class="block font-medium">New Reporting To</label><input type="text" id="request-NewReportingTo" name="NewReportingTo" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+            <div><label class="block font-medium">New Reporting To ID</label><input type="text" id="request-NewReportingToId" name="NewReportingToId" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        </div>
         <div><label class="block font-medium">Effective Date</label><input type="date" id="effective-date-request" name="EffectiveDate" class="mt-1 p-2 w-full border rounded"></div>
         <div class="md:col-span-2"><label class="block font-medium">Justification</label><textarea id="justification" name="Justification" class="mt-1 p-2 w-full border rounded"></textarea></div>
         ${fileUploadHtml}
@@ -4681,11 +4685,26 @@ function handleRequestTypeChange() {
       break;
     case 'Hiring of a new employee (replacement for vacancy)':
       fieldsHtml = `
-        <div><label class="block font-medium">Vacant Position ID</label><div id="vacant-position-dropdown" class="searchable-dropdown"></div></div>
-        <div><label class="block font-medium">New Employee Name</label><input type="text" id="new-employee-name" class="mt-1 p-2 w-full border rounded"></div>
-        <div><label class="block font-medium">New Employee ID</label><input type="text" id="new-employee-id" class="mt-1 p-2 w-full border rounded"></div>
-        <div><label class="block font-medium">Effective Date</label><input type="date" id="effective-date-request" class="mt-1 p-2 w-full border rounded"></div>
-        <div><label class="block font-medium">Justification</label><textarea id="justification" class="mt-1 p-2 w-full border rounded"></textarea></div>
+        <div class="md:col-span-2"><label class="block font-medium">Vacant Position ID</label><div id="vacant-position-dropdown" class="searchable-dropdown"></div></div>
+
+        <div><label class="block font-medium">Job Title</label><input type="text" id="request-job-title" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        <div><label class="block font-medium">Reporting To</label><input type="text" id="request-reporting-to" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        <div><label class="block font-medium">Reporting To ID</label><input type="text" id="request-reporting-to-id" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        <div><label class="block font-medium">Division</label><input type="text" id="request-division" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        <div><label class="block font-medium">Group</label><input type="text" id="request-group" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        <div><label class="block font-medium">Department</label><input type="text" id="request-department" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        <div><label class="block font-medium">Section</label><input type="text" id="request-section" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        <div><label class="block font-medium">Level</label><input type="text" id="request-level" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        <div><label class="block font-medium">Contract Type</label><input type="text" id="request-contract-type" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+        <div><label class="block font-medium">Position Status</label><input type="text" id="request-position-status" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+
+        <div class="md:col-span-2"><hr class="my-2"></div>
+
+        <div><label class="block font-medium">New Employee Name</label><input type="text" id="new-employee-name" name="NewEmployeeName" class="mt-1 p-2 w-full border rounded"></div>
+        <div><label class="block font-medium">New Employee ID</label><input type="text" id="new-employee-id" name="NewEmployeeID" class="mt-1 p-2 w-full border rounded"></div>
+        <div><label class="block font-medium">Effective Date</label><input type="date" id="effective-date-request" name="EffectiveDate" class="mt-1 p-2 w-full border rounded"></div>
+
+        <div class="md:col-span-2"><label class="block font-medium">Justification</label><textarea id="justification" name="Justification" class="mt-1 p-2 w-full border rounded"></textarea></div>
         ${fileUploadHtml}
       `;
       break;
@@ -4724,10 +4743,20 @@ function handleRequestTypeChange() {
       }
     });
     const vacantPositions = fullEmployeeData.filter(p => !p.employeeId).map(p => p.positionId);
-    createSearchableDropdown('new-position-dropdown', vacantPositions, null, null, (val) => {
+    createSearchableDropdown('new-position-dropdown', vacantPositions, null, null, (positionId) => {
         const input = document.querySelector('#new-position-dropdown .searchable-dropdown-input');
         input.name = "NewPositionID";
-        input.value = val;
+        input.value = positionId;
+
+        // Find the selected position to get its manager's details
+        const selectedPosition = fullEmployeeData.find(p => p.positionId === positionId);
+        if (selectedPosition) {
+            document.getElementById('request-NewReportingTo').value = selectedPosition.managerName || '';
+            document.getElementById('request-NewReportingToId').value = selectedPosition.managerEmployeeId || '';
+        } else {
+            document.getElementById('request-NewReportingTo').value = '';
+            document.getElementById('request-NewReportingToId').value = '';
+        }
     });
   }
   if (requestType.includes('newly created')) {
@@ -4755,7 +4784,33 @@ function handleRequestTypeChange() {
   }
   if (requestType.includes('replacement')) {
     const vacantPositions = fullEmployeeData.filter(p => !p.employeeId).map(p => p.positionId);
-    createSearchableDropdown('vacant-position-dropdown', vacantPositions, null, null, null);
+    createSearchableDropdown('vacant-position-dropdown', vacantPositions, null, null, (positionId) => {
+      const position = fullEmployeeData.find(p => p.positionId === positionId);
+      if (position) {
+        document.getElementById('request-job-title').value = position.jobTitle || '';
+        document.getElementById('request-reporting-to').value = position.managerName || '';
+        document.getElementById('request-reporting-to-id').value = position.managerId || '';
+        document.getElementById('request-division').value = position.division || '';
+        document.getElementById('request-group').value = position.group || '';
+        document.getElementById('request-department').value = position.department || '';
+        document.getElementById('request-section').value = position.section || '';
+        document.getElementById('request-level').value = position.level || '';
+        document.getElementById('request-contract-type').value = position.contractType || '';
+        document.getElementById('request-position-status').value = position.positionStatus || '';
+      } else {
+        // Clear fields if no position is found
+        document.getElementById('request-job-title').value = '';
+        document.getElementById('request-reporting-to').value = '';
+        document.getElementById('request-reporting-to-id').value = '';
+        document.getElementById('request-division').value = '';
+        document.getElementById('request-group').value = '';
+        document.getElementById('request-department').value = '';
+        document.getElementById('request-section').value = '';
+        document.getElementById('request-level').value = '';
+        document.getElementById('request-contract-type').value = '';
+        document.getElementById('request-position-status').value = '';
+      }
+    });
   }
 }
 
@@ -4798,14 +4853,24 @@ function submitRequest() {
 
   Promise.all(filePromises).then(fileContents => {
     const requestData = {
+      // Common fields
       RequestType: requestType,
       ApproverEmail: document.getElementById('approver-email-select').value,
       Justification: document.getElementById('justification')?.value,
       EffectiveDate: document.getElementById('effective-date-request')?.value,
-      EmployeeID: document.querySelector('#employee-request-dropdown .searchable-dropdown-input')?.dataset.value,
+      files: fileContents,
+
+      // Transfer/Promotion fields
+      EmployeeID: document.getElementById('request-EmployeeID')?.value,
+      DateHired: document.getElementById('request-DateHired')?.value,
+      DateOfBirth: document.getElementById('request-DateOfBirth')?.value,
       EmployeeName: document.querySelector('#employee-request-dropdown .searchable-dropdown-input')?.value,
       CurrentPositionID: document.getElementById('current-position-id')?.value,
       NewPositionID: document.querySelector('#new-position-dropdown .searchable-dropdown-input')?.value,
+      NewReportingTo: document.getElementById('request-NewReportingTo')?.value,
+      NewReportingToId: document.getElementById('request-NewReportingToId')?.value,
+
+      // New Position fields
       NewJobTitle: document.querySelector('#new-job-title-dropdown .searchable-dropdown-input')?.value,
       NewLevel: document.querySelector('#new-level-dropdown .searchable-dropdown-input')?.value,
       Division: document.querySelector('#request-division-dropdown .searchable-dropdown-input')?.value,
@@ -4814,12 +4879,27 @@ function submitRequest() {
       Section: document.querySelector('#request-section-dropdown .searchable-dropdown-input')?.value,
       ReportingToId: document.getElementById('reporting-to-id-request')?.value,
       PositionStatus: document.querySelector('#position-status-request-dropdown .searchable-dropdown-input')?.value,
+
+      // Replacement fields
       VacantPositionID: document.querySelector('#vacant-position-dropdown .searchable-dropdown-input')?.value,
-      NewEmployeeName: '', // These are no longer used for 'newly created position'
-      NewEmployeeID: '',   // These are no longer used for 'newly created position'
-      files: fileContents
+      NewEmployeeName: document.getElementById('new-employee-name')?.value,
+      NewEmployeeID: document.getElementById('new-employee-id')?.value,
     };
     
+    // For replacement requests, overwrite/add fields with data from the readonly inputs
+    if (requestType === 'Hiring of a new employee (replacement for vacancy)') {
+        requestData.NewJobTitle = document.getElementById('request-job-title')?.value;
+        requestData.ReportingTo = document.getElementById('request-reporting-to')?.value;
+        requestData.ReportingToId = document.getElementById('request-reporting-to-id')?.value;
+        requestData.Division = document.getElementById('request-division')?.value;
+        requestData.Group = document.getElementById('request-group')?.value;
+        requestData.Department = document.getElementById('request-department')?.value;
+        requestData.Section = document.getElementById('request-section')?.value;
+        requestData.NewLevel = document.getElementById('request-level')?.value;
+        requestData.ContractType = document.getElementById('request-contract-type')?.value;
+        requestData.PositionStatus = document.getElementById('request-position-status')?.value;
+    }
+
     showSavingOverlay('Submitting Request...');
 
     google.script.run

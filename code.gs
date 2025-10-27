@@ -164,7 +164,9 @@ function implementApprovedChange(requestId) {
             datehired: rowData[headerMap.get('DateHired')],
             dateofbirth: rowData[headerMap.get('DateOfBirth')],
             status: requestType,
-            startdateinposition: rowData[headerMap.get('EffectiveDate')]
+            startdateinposition: rowData[headerMap.get('EffectiveDate')],
+            reportingto: rowData[headerMap.get('NewReportingTo')],
+            reportingtoid: rowData[headerMap.get('NewReportingToId')]
           };
         } else if (requestType.includes('replacement for vacancy')) {
           logToSheet('Processing Replacement for Vacancy logic.');
@@ -185,6 +187,30 @@ function implementApprovedChange(requestId) {
           if (newPositionId.startsWith('ERROR')) {
             throw new Error('Could not generate new Position ID: ' + newPositionId);
           }
+
+          const reportingToId = rowData[headerMap.get('ReportingToId')];
+          let reportingToName = '';
+
+          // Get main sheet data to find the manager's name
+          const mainSheet = ss.getSheets()[0];
+          const mainData = mainSheet.getDataRange().getValues();
+          const mainHeaders = mainData[0];
+          const mainEmpIdIndex = mainHeaders.indexOf('Employee ID');
+          const mainEmpNameIndex = mainHeaders.indexOf('Employee Name');
+
+          if (mainEmpIdIndex > -1 && mainEmpNameIndex > -1) {
+              for (let j = 1; j < mainData.length; j++) {
+                  // Ensure case-insensitive and trim comparison
+                  if (String(mainData[j][mainEmpIdIndex] || '').trim().toUpperCase() === String(reportingToId || '').trim().toUpperCase()) {
+                      reportingToName = mainData[j][mainEmpNameIndex];
+                      logToSheet(`Found manager name "${reportingToName}" for manager ID "${reportingToId}".`);
+                      break;
+                  }
+              }
+          }
+          if (!reportingToName) {
+              logToSheet(`WARNING: Could not find a name for manager with ID "${reportingToId}".`);
+          }
           
           dataToSave = {
             positionid: newPositionId,
@@ -194,11 +220,11 @@ function implementApprovedChange(requestId) {
             group: rowData[headerMap.get('Group')],
             department: rowData[headerMap.get('Department')],
             section: section,
-            reportingtoid: rowData[headerMap.get('ReportingToId')],
+            reportingtoid: reportingToId,
+            reportingto: reportingToName, // Add the manager's name
             status: 'VACANT',
             employeename: '',
-            employeeid: '',
-            positionstatus: rowData[headerMap.get('PositionStatus')] || 'Active'
+            employeeid: ''
           };
           mode = 'add';
         }
@@ -290,71 +316,90 @@ function getRequestCounts() {
 
 function getChangeRequests() {
   try {
+    Logger.log('getChangeRequests function started.');
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName('Org Chart Requests');
     if (!sheet || sheet.getLastRow() < 2) {
+      Logger.log('Sheet "Org Chart Requests" not found or empty.');
       return { myRequests: [], approvals: [] };
     }
 
     const data = sheet.getDataRange().getValues();
-    const rawHeaders = data.shift();
-    // *** FIX: Normalize headers to be robust against case/spacing issues ***
-    const headers = rawHeaders.map(h => (h || '').toString().trim().toLowerCase().replace(/\s+/g, ''));
+    const headers = data.shift(); // Keep original headers for object keys
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
 
-    // *** FIX: Use the normalized headers to find indices ***
-    const headerMap = new Map(headers.map((h, i) => [h, i]));
-    const requestorEmailIndex = headerMap.get('requestoremail');
-    const approverEmailIndex = headerMap.get('approveremail');
-    const statusIndex = headerMap.get('status');
-    const submissionTimestampIndex = headerMap.get('submissiontimestamp');
-    const supportDocIndex = headerMap.get('supportingdocuments');
+    // Create a normalized map to find column indices reliably
+    const normalizedHeaderMap = new Map();
+    headers.forEach((header, i) => {
+      const normalizedKey = (header || '').toString().toLowerCase().replace(/\s+/g, '');
+      if (normalizedKey) {
+        normalizedHeaderMap.set(normalizedKey, i);
+      }
+    });
 
-    if (requestorEmailIndex === undefined || approverEmailIndex === undefined || statusIndex === undefined || submissionTimestampIndex === undefined) {
-      throw new Error(`One or more required columns are missing in 'Org Chart Requests'. Found: ${rawHeaders.join(', ')}`);
+    // Get indices using the normalized map
+    const requestorEmailIndex = normalizedHeaderMap.get('requestoremail');
+    const approverEmailIndex = normalizedHeaderMap.get('approveremail');
+    const statusIndex = normalizedHeaderMap.get('status');
+    const supportDocIndex = normalizedHeaderMap.get('supportingdocuments');
+    const submissionTimestampIndex = normalizedHeaderMap.get('submissiontimestamp');
+
+    if (requestorEmailIndex === undefined || approverEmailIndex === undefined || statusIndex === undefined) {
+      const errorMessage = "Missing required columns (RequestorEmail, ApproverEmail, or Status). Please check the 'Org Chart Requests' sheet headers.";
+      Logger.log(errorMessage + " Headers found: " + headers.join(', '));
+      throw new Error(errorMessage);
     }
 
     const requests = data.map(row => {
       const request = {};
-      // *** FIX: Iterate over original headers to maintain original case in the output object ***
-      rawHeaders.forEach((header, i) => {
-        let value = row[i];
-        if (i === supportDocIndex && value) {
-          request[header] = `<a href="${value}" target="_blank">View Documents</a>`;
-        } else if ((header.toLowerCase().includes('timestamp') || header.toLowerCase().includes('date')) && value instanceof Date) {
-          request[header] = value.toISOString();
+      headers.forEach((header, i) => {
+        // Use original headers for the keys in the final objects
+        if (i === supportDocIndex && row[i]) {
+          request[header] = `<a href="${row[i]}" target="_blank">View Documents</a>`;
+        } else if (row[i] instanceof Date) {
+          // Format all dates consistently
+          request[header] = Utilities.formatDate(row[i], Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
         } else {
-          request[header] = value;
+          request[header] = row[i];
         }
       });
       return request;
     });
 
+    // Use original header names for filtering, which are now guaranteed to exist
+    const requestorEmailHeader = headers[requestorEmailIndex];
+    const approverEmailHeader = headers[approverEmailIndex];
+    const statusHeader = headers[statusIndex];
+    const submissionTimestampHeader = headers[submissionTimestampIndex];
+
     const myRequests = requests.filter(r =>
-      (r.RequestorEmail || '').toString().toLowerCase().trim() === userEmail
+      (r[requestorEmailHeader] || '').toString().toLowerCase().trim() === userEmail
     );
 
     const approvals = requests.filter(r => {
-      const status = (r.Status || '').toString().toLowerCase().trim();
+      const status = (r[statusHeader] || '').toString().toLowerCase().trim();
       return (status === 'pending' || status === 'approved' || status === 'implemented') &&
-             (r.ApproverEmail || '').toString().toLowerCase().trim() === userEmail;
+             (r[approverEmailHeader] || '').toString().toLowerCase().trim() === userEmail;
     });
 
+    // Sort using the dynamically found timestamp header
     const sortByTimestampDesc = (a, b) => {
-      const dateA = a.SubmissionTimestamp ? new Date(a.SubmissionTimestamp) : new Date(0);
-      const dateB = b.SubmissionTimestamp ? new Date(b.SubmissionTimestamp) : new Date(0);
+      const dateA = a[submissionTimestampHeader] ? new Date(a[submissionTimestampHeader]) : new Date(0);
+      const dateB = b[submissionTimestampHeader] ? new Date(b[submissionTimestampHeader]) : new Date(0);
       return dateB - dateA;
     };
 
     myRequests.sort(sortByTimestampDesc);
     approvals.sort(sortByTimestampDesc);
 
-    return { myRequests, approvals };
+    const resultObject = { myRequests, approvals };
+    Logger.log('Successfully prepared data. My Requests: ' + myRequests.length + ', Approvals: ' + approvals.length);
+    return resultObject;
 
   } catch (e) {
     Logger.log('FATAL Error in getChangeRequests: ' + e.message + ' Stack: ' + e.stack);
-    // Return a structured error object for the frontend to handle gracefully
-    return { error: e.message, myRequests: [], approvals: [] };
+    // Return a safe, empty object to prevent frontend errors
+    return { myRequests: [], approvals: [] };
   }
 }
 
@@ -1889,9 +1934,7 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
   const timestampIndex = headers.indexOf('Change Timestamp');
   const effectiveDateIndex = headers.indexOf('Effective Date');
   const hireDateIndex = headers.indexOf('Date Hired');
-  const statusIndex = headers.indexOf('Status'); // Get the 'Status' column index.
 
-  // Helper to determine if this is the very first recorded event for an employee across all positions.
   const isFirstEverEventForEmployee = (employeeId, eventDate, allLogs) => {
     for (const row of allLogs) {
       const logEmpId = (row[empIdIndex] || '').toString().trim();
@@ -1915,7 +1958,6 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
   });
 
   const finalHistory = {};
-  const internalMovementStatus = ['PROMOTION', 'INTERNAL TRANSFER', 'LATERAL TRANSFER', 'FILLED VACANCY'];
 
   for (const posId in positions) {
     const logEntries = positions[posId];
@@ -1927,7 +1969,6 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
         incumbentName: (row[nameIndex] || '').toString().trim() || 'N/A',
         jobTitle: (row[jobTitleIndex] || '').toString().trim() || 'N/A',
         hireDate: _parseDate(row[hireDateIndex]),
-        status: (row[statusIndex] || '').toString().trim().toUpperCase(), // Store the status.
         isEffective: !!_parseDate(row[effectiveDateIndex])
       }))
       .filter(e => e.eventDate)
@@ -1945,10 +1986,7 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
       }
 
       let startDate = startEvent.eventDate;
-      // *** MODIFIED START DATE LOGIC ***
-      if (internalMovementStatus.includes(startEvent.status)) {
-        startDate = startEvent.eventDate;
-      } else if (startEvent.hireDate && startEvent.hireDate.getTime() < startEvent.eventDate.getTime()) {
+      if (startEvent.hireDate && startEvent.hireDate.getTime() < startEvent.eventDate.getTime()) {
         if (isFirstEverEventForEmployee(startEvent.incumbentId, startEvent.eventDate, allLogData)) {
           startDate = startEvent.hireDate;
         }
@@ -1960,12 +1998,14 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
 
       for (let j = i; j < allChangeEventsForPos.length; j++) {
         const currentEvent = allChangeEventsForPos[j];
+
         if (currentEvent.incumbentId !== startEvent.incumbentId) {
           endDate = currentEvent.eventDate;
           tenureEndingEvent = currentEvent;
           nextEventIndex = j;
           break;
         }
+
         if (currentEvent.isEffective && currentEvent.incumbentId === startEvent.incumbentId) {
           endDate = currentEvent.eventDate;
           tenureEndingEvent = currentEvent;
@@ -1983,6 +2023,7 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
       }
 
       const lastEventOfThisTenure = allChangeEventsForPos[nextEventIndex - 1];
+
       historyRecords.push({
         startDate: startDate,
         endDate: endDate,
@@ -1991,8 +2032,10 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
         jobTitle: lastEventOfThisTenure.jobTitle,
         hireDate: startEvent.hireDate
       });
+
       i = nextEventIndex;
     }
+
     const changeCount = historyRecords.length;
     historyRecords.forEach(rec => rec.changeCount = changeCount);
     finalHistory[posId] = historyRecords;
@@ -4042,13 +4085,13 @@ function getPreviewOrgChartData(requestId) {
       }
 
       if (newPosition) {
-        // --- MODIFICATION ---
-        // Do not change the state of the target position.
-        // Just highlight it and label it as the target.
+        newPosition.employeeid = employeeId;
+        newPosition.employeename = employeeName;
+        newPosition.status = requestType.toUpperCase();
         newPosition.isPreviewChange = true;
-        newPosition.changeType = `TARGET POSITION FOR ${employeeName}`;
+        newPosition.changeType = requestType.toUpperCase() + ' - ' + employeeName;
+        newPosition.effectiveDate = effectiveDate ? Utilities.formatDate(new Date(effectiveDate), Session.getScriptTimeZone(), 'yyyy-MM-dd') : null;
         changedPositionIds.add(newPosition.positionid);
-        // --- END MODIFICATION ---
       } else {
         Logger.log(`Warning: New position ${newPositionId} not found during preview generation.`);
       }
