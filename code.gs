@@ -4056,13 +4056,13 @@ function getPreviewOrgChartData(requestId) {
       }
 
       if (newPosition) {
-        newPosition.employeeid = employeeId;
-        newPosition.employeename = employeeName;
-        newPosition.status = requestType.toUpperCase();
+        // --- START: Corrected Preview Logic ---
+        // DO NOT simulate the move. Instead, just label the target position
+        // while preserving its current state (e.g., vacant).
         newPosition.isPreviewChange = true;
-        newPosition.changeType = requestType.toUpperCase() + ' - ' + employeeName;
-        newPosition.effectiveDate = effectiveDate ? Utilities.formatDate(new Date(effectiveDate), Session.getScriptTimeZone(), 'yyyy-MM-dd') : null;
+        newPosition.changeType = 'TARGET POSITION FOR ' + employeeName;
         changedPositionIds.add(newPosition.positionid);
+        // --- END: Corrected Preview Logic ---
       } else {
         Logger.log(`Warning: New position ${newPositionId} not found during preview generation.`);
       }
