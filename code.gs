@@ -164,7 +164,9 @@ function implementApprovedChange(requestId) {
             datehired: rowData[headerMap.get('DateHired')],
             dateofbirth: rowData[headerMap.get('DateOfBirth')],
             status: requestType,
-            startdateinposition: rowData[headerMap.get('EffectiveDate')]
+            startdateinposition: rowData[headerMap.get('EffectiveDate')],
+            reportingto: rowData[headerMap.get('NewReportingTo')],
+            reportingtoid: rowData[headerMap.get('NewReportingToId')]
           };
         } else if (requestType.includes('replacement for vacancy')) {
           logToSheet('Processing Replacement for Vacancy logic.');
@@ -223,11 +225,6 @@ function implementApprovedChange(requestId) {
             status: 'VACANT',
             employeename: '',
             employeeid: ''
-            reportingtoid: rowData[headerMap.get('ReportingToId')],
-            status: 'VACANT',
-            employeename: '',
-            employeeid: '',
-            positionstatus: rowData[headerMap.get('PositionStatus')] || 'Active'
           };
           mode = 'add';
         }
@@ -1972,7 +1969,6 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
         incumbentName: (row[nameIndex] || '').toString().trim() || 'N/A',
         jobTitle: (row[jobTitleIndex] || '').toString().trim() || 'N/A',
         hireDate: _parseDate(row[hireDateIndex]),
-        status: (row[statusIndex] || '').toString().trim().toUpperCase(), // Store the status.
         isEffective: !!_parseDate(row[effectiveDateIndex])
       }))
       .filter(e => e.eventDate)
@@ -1991,10 +1987,6 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
 
       let startDate = startEvent.eventDate;
       if (startEvent.hireDate && startEvent.hireDate.getTime() < startEvent.eventDate.getTime()) {
-      // *** MODIFIED START DATE LOGIC ***
-      if (internalMovementStatus.includes(startEvent.status)) {
-        startDate = startEvent.eventDate;
-      } else if (startEvent.hireDate && startEvent.hireDate.getTime() < startEvent.eventDate.getTime()) {
         if (isFirstEverEventForEmployee(startEvent.incumbentId, startEvent.eventDate, allLogData)) {
           startDate = startEvent.hireDate;
         }
