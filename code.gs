@@ -164,9 +164,7 @@ function implementApprovedChange(requestId) {
             datehired: rowData[headerMap.get('DateHired')],
             dateofbirth: rowData[headerMap.get('DateOfBirth')],
             status: requestType,
-            startdateinposition: rowData[headerMap.get('EffectiveDate')],
-            reportingto: rowData[headerMap.get('NewReportingTo')],
-            reportingtoid: rowData[headerMap.get('NewReportingToId')]
+            startdateinposition: rowData[headerMap.get('EffectiveDate')]
           };
         } else if (requestType.includes('replacement for vacancy')) {
           logToSheet('Processing Replacement for Vacancy logic.');
@@ -187,30 +185,6 @@ function implementApprovedChange(requestId) {
           if (newPositionId.startsWith('ERROR')) {
             throw new Error('Could not generate new Position ID: ' + newPositionId);
           }
-
-          const reportingToId = rowData[headerMap.get('ReportingToId')];
-          let reportingToName = '';
-
-          // Get main sheet data to find the manager's name
-          const mainSheet = ss.getSheets()[0];
-          const mainData = mainSheet.getDataRange().getValues();
-          const mainHeaders = mainData[0];
-          const mainEmpIdIndex = mainHeaders.indexOf('Employee ID');
-          const mainEmpNameIndex = mainHeaders.indexOf('Employee Name');
-
-          if (mainEmpIdIndex > -1 && mainEmpNameIndex > -1) {
-              for (let j = 1; j < mainData.length; j++) {
-                  // Ensure case-insensitive and trim comparison
-                  if (String(mainData[j][mainEmpIdIndex] || '').trim().toUpperCase() === String(reportingToId || '').trim().toUpperCase()) {
-                      reportingToName = mainData[j][mainEmpNameIndex];
-                      logToSheet(`Found manager name "${reportingToName}" for manager ID "${reportingToId}".`);
-                      break;
-                  }
-              }
-          }
-          if (!reportingToName) {
-              logToSheet(`WARNING: Could not find a name for manager with ID "${reportingToId}".`);
-          }
           
           dataToSave = {
             positionid: newPositionId,
@@ -220,11 +194,10 @@ function implementApprovedChange(requestId) {
             group: rowData[headerMap.get('Group')],
             department: rowData[headerMap.get('Department')],
             section: section,
-            reportingtoid: reportingToId,
-            reportingto: reportingToName, // Add the manager's name
-            status: 'VACANT',
-            employeename: '',
-            employeeid: ''
+            reportingtoid: rowData[headerMap.get('ReportingToId')],
+            status: 'NEW HIRE',
+            employeename: rowData[headerMap.get('NewEmployeeName')],
+            employeeid: rowData[headerMap.get('NewEmployeeID')],
           };
           mode = 'add';
         }
@@ -3555,8 +3528,6 @@ function submitChangeRequest(requestData) {
           return requestData.DateHired || '';
         case 'DateOfBirth':
           return requestData.DateOfBirth || '';
-        case 'PositionStatus':
-            return requestData.PositionStatus || '';
         default:
           // Use a more robust check for other fields
           return requestData.hasOwnProperty(header) ? requestData[header] : '';
@@ -4160,10 +4131,17 @@ function getPreviewOrgChartData(requestId) {
         if (newManagerPositionId) {
           p.managerId = newManagerPositionId;
         } else {
-          // If the manager ID points to an employee who no longer exists in a position
-          // (e.g., they were the one transferred out), this link should be broken.
-          p.managerId = ''; 
-          Logger.log(`Preview Warning: Could not find new position for manager with Employee ID ${managerEmployeeId}. Breaking link for ${p.positionid}.`);
+      // FALLBACK: If the manager's employee ID wasn't found in the map,
+      // it could be because the 'reportingtoid' is a vacant Position ID.
+      // We'll check if it looks like a position ID (contains a hyphen)
+      // and use it directly to prevent orphan nodes.
+      if (managerEmployeeId.includes('-')) {
+        p.managerId = managerEmployeeId;
+      } else {
+        // If it doesn't look like a position ID, then break the link.
+        p.managerId = '';
+        Logger.log(`Preview Warning: Could not find new position for manager with Employee ID ${managerEmployeeId}. Breaking link for ${p.positionid}.`);
+      }
         }
       } else {
         // No manager employee ID, so no manager link.
