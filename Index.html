@@ -602,7 +602,7 @@
   </div>
 </div>
 
-<div id="jd-modal" class="modal-overlay">
+<div id="jd-modal" class="modal-overlay" style="z-index: 70;">
   <div class="modal-content">
     <div class="flex justify-between items-center mb-4">
       <h2 id="jd-modal-title" class="text-2xl font-bold text-slate-800">Job Description</h2>
@@ -1371,6 +1371,19 @@
         </div>
     </div>
 </main> <!-- Close main content area -->
+
+    <div id="request-details-modal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="flex justify-between items-center mb-4">
+          <h2 id="request-details-modal-title" class="text-2xl font-bold text-slate-800">Request Details</h2>
+          <button onclick="closeRequestDetailsModal()" class="text-gray-500 hover:text-gray-800 text-2xl font-bold">&times;</button>
+        </div>
+        <div id="request-details-modal-body" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          </div>
+        <div id="request-details-modal-footer" class="mt-6 flex justify-end gap-3">
+          </div>
+      </div>
+    </div>
 </div> <!-- Close app -->
 
 <!-- Request Change Modal -->
@@ -1394,7 +1407,7 @@
           </select>
         </div>
         <div>
-          <label class="block font-medium">Select Approver</label>
+          <label class="block font-medium">Select Approver <span class="text-red-500">*</span></label>
           <select id="approver-email-select" name="ApproverEmail" class="mt-1 p-2 w-full border rounded">
             <option value="">Loading approvers...</option>
           </select>
@@ -1435,7 +1448,13 @@
 <!-- My Requests View -->
 <div id="my-requests-view" class="tab-content">
   <div class="p-4 sm:p-6 bg-white rounded-lg shadow-md">
-    <h2 class="text-2xl font-bold text-slate-800 mb-4">My Change Requests</h2>
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-2xl font-bold text-slate-800">My Change Requests</h2>
+      <button id="refresh-my-requests" class="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 font-semibold flex items-center">
+        <svg class="w-5 h-5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5M4 4l5 5M20 20l-5-5"></path></svg>
+        Refresh
+      </button>
+    </div>
     <table id="my-requests-table" class="display" style="width:100%">
     </table>
   </div>
@@ -1444,7 +1463,13 @@
 <!-- Approvals View -->
 <div id="approvals-view" class="tab-content">
   <div class="p-4 sm:p-6 bg-white rounded-lg shadow-md">
-    <h2 class="text-2xl font-bold text-slate-800 mb-4">Change Request Approvals</h2>
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-2xl font-bold text-slate-800">Change Request Approvals</h2>
+      <button id="refresh-approvals" class="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 font-semibold flex items-center">
+        <svg class="w-5 h-5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5M4 4l5 5M20 20l-5-5"></path></svg>
+        Refresh
+      </button>
+    </div>
     <table id="approvals-table" class="display" style="width:100%">
     </table>
   </div>
@@ -1769,9 +1794,9 @@ function switchTab(tabId) {
       drawHiringPredictions();
       drawTalentInsights(); // <-- ADD THIS LINE
   } else if (tabId === 'my-requests') {
-    drawMyRequestsTable();
+    loadChangeRequestData(renderMyRequestsTable);
   } else if (tabId === 'approvals') {
-    drawApprovalsTable();
+    loadChangeRequestData(renderApprovalsTable);
   } else if (tabId === 'adoption' && !adoptionDataLoaded) {
       drawAdoptionDashboard();
   } else if (tabId === 'competency' && !competencyViewInitialized) {
@@ -3376,8 +3401,12 @@ function renderNotifications(data) {
    */
   function setupPageEventListeners() {
     document.getElementById('reset-filters-btn').addEventListener('click', resetFilters);
-    // --- ADD THIS LINE ---
     document.getElementById('show-inactive-checkbox').addEventListener('change', updateUI);
+    
+    // Add event listeners for the new refresh buttons
+    document.getElementById('refresh-my-requests').addEventListener('click', refreshChangeRequestData);
+    document.getElementById('refresh-approvals').addEventListener('click', refreshChangeRequestData);
+
 }
 
   /**
@@ -4656,6 +4685,7 @@ function handleRequestTypeChange() {
           <div><label class="block font-medium">Employee ID</label><input type="text" id="request-EmployeeID" name="EmployeeID" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
           <div><label class="block font-medium">Date Hired</label><input type="text" id="request-DateHired" name="DateHired" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
           <div><label class="block font-medium">Date of Birth</label><input type="text" id="request-DateOfBirth" name="DateOfBirth" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
+          <div><label class="block font-medium">Gender</label><input type="text" id="request-Gender" name="Gender" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
         </div>
         <div><label class="block font-medium">Current Position ID</label><input type="text" id="current-position-id" name="CurrentPositionID" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
         <div><label class="block font-medium">New Position ID</label><div id="new-position-dropdown" class="searchable-dropdown"></div></div>
@@ -4670,6 +4700,7 @@ function handleRequestTypeChange() {
       break;
     case 'Hiring of a new employee (newly created position)':
       fieldsHtml = `
+        <div class="md:col-span-2 font-bold text-indigo-700">Position Details</div>
         <div><label class="block font-medium">Division</label><div id="request-division-dropdown" class="searchable-dropdown"></div></div>
         <div><label class="block font-medium">Group</label><div id="request-group-dropdown" class="searchable-dropdown"></div></div>
         <div><label class="block font-medium">Department</label><div id="request-department-dropdown" class="searchable-dropdown"></div></div>
@@ -4678,13 +4709,14 @@ function handleRequestTypeChange() {
         <div><label class="block font-medium">New Position Level</label><div id="new-level-dropdown" class="searchable-dropdown"></div></div>
         <div><label class="block font-medium">Reporting To</label><div id="reporting-to-request-dropdown" class="searchable-dropdown"></div></div>
         <div><label class="block font-medium">Reporting To Employee ID</label><input type="text" id="reporting-to-id-request" name="ReportingToId" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
-        <div><label class="block font-medium">Position Status</label><div id="position-status-request-dropdown" class="searchable-dropdown"></div></div>
-        <div class="md:col-span-2"><label class="block font-medium">Justification</label><textarea id="justification" name="Justification" class="mt-1 p-2 w-full border rounded" rows="3"></textarea></div>
+        
+        <div class="md:col-span-2 mt-4"><label class="block font-medium">Justification</label><textarea id="justification" name="Justification" class="mt-1 p-2 w-full border rounded" rows="3"></textarea></div>
         ${fileUploadHtml}
       `;
       break;
     case 'Hiring of a new employee (replacement for vacancy)':
       fieldsHtml = `
+        <div class="md:col-span-2 font-bold text-indigo-700">Position to be Filled</div>
         <div class="md:col-span-2"><label class="block font-medium">Vacant Position ID</label><div id="vacant-position-dropdown" class="searchable-dropdown"></div></div>
         
         <div><label class="block font-medium">Job Title</label><input type="text" id="request-job-title" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
@@ -4695,15 +4727,9 @@ function handleRequestTypeChange() {
         <div><label class="block font-medium">Department</label><input type="text" id="request-department" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
         <div><label class="block font-medium">Section</label><input type="text" id="request-section" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
         <div><label class="block font-medium">Level</label><input type="text" id="request-level" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
-        <div><label class="block font-medium">Contract Type</label><input type="text" id="request-contract-type" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
-        <div><label class="block font-medium">Position Status</label><input type="text" id="request-position-status" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
-
-        <div class="md:col-span-2"><hr class="my-2"></div>
-
-        <div><label class="block font-medium">New Employee Name</label><input type="text" id="new-employee-name" name="NewEmployeeName" class="mt-1 p-2 w-full border rounded"></div>
-        <div><label class="block font-medium">New Employee ID</label><input type="text" id="new-employee-id" name="NewEmployeeID" class="mt-1 p-2 w-full border rounded"></div>
-        <div><label class="block font-medium">Effective Date</label><input type="date" id="effective-date-request" name="EffectiveDate" class="mt-1 p-2 w-full border rounded"></div>
+        <div><label class="block font-medium">Effective Vacancy Date</label><input type="date" id="effective-date-request-readonly" readonly class="mt-1 p-2 w-full border rounded bg-gray-100"></div>
         
+        <div class="md:col-span-2 mt-4 font-bold text-indigo-700">Request Details</div>
         <div class="md:col-span-2"><label class="block font-medium">Justification</label><textarea id="justification" name="Justification" class="mt-1 p-2 w-full border rounded"></textarea></div>
         ${fileUploadHtml}
       `;
@@ -4723,23 +4749,23 @@ function handleRequestTypeChange() {
       if (employee) {
         document.getElementById('current-position-id').value = employee.positionId;
         
-        // --- NEW: Call backend to get more details ---
         google.script.run
           .withSuccessHandler(details => {
             if (details) {
               document.getElementById('request-EmployeeID').value = details.employeeId || '';
               document.getElementById('request-DateHired').value = details.dateHired || '';
               document.getElementById('request-DateOfBirth').value = details.dateOfBirth || '';
+              document.getElementById('request-Gender').value = details.gender || '';
             }
           })
           .getEmployeeDetails(employeeName);
 
       } else {
-        // Clear fields if no employee is found (e.g., input cleared)
          document.getElementById('current-position-id').value = '';
          document.getElementById('request-EmployeeID').value = '';
          document.getElementById('request-DateHired').value = '';
          document.getElementById('request-DateOfBirth').value = '';
+         document.getElementById('request-Gender').value = '';
       }
     });
     const vacantPositions = fullEmployeeData.filter(p => !p.employeeId).map(p => p.positionId);
@@ -4748,7 +4774,6 @@ function handleRequestTypeChange() {
         input.name = "NewPositionID";
         input.value = positionId;
 
-        // Find the selected position to get its manager's details
         const selectedPosition = fullEmployeeData.find(p => p.positionId === positionId);
         if (selectedPosition) {
             document.getElementById('request-NewReportingTo').value = selectedPosition.managerName || '';
@@ -4771,11 +4796,7 @@ function handleRequestTypeChange() {
     createSearchableDropdown('reporting-to-request-dropdown', dropdownListData.managers || [], 'name', 'id', (employeeId) => {
       document.getElementById('reporting-to-id-request').value = employeeId;
     });
-    createSearchableDropdown('position-status-request-dropdown', ['Active', 'Inactive'], null, null, (val) => {
-        const input = document.querySelector('#position-status-request-dropdown .searchable-dropdown-input');
-        input.name = "PositionStatus";
-    });
-
+    
     // Dependent dropdowns for new position location
     createSearchableDropdown('request-division-dropdown', dropdownListData.divisions || [], null, null, (sel) => updateRequestLocationDropdowns('division', sel));
     createSearchableDropdown('request-group-dropdown', [], null, null, (sel) => updateRequestLocationDropdowns('group', sel));
@@ -4789,14 +4810,23 @@ function handleRequestTypeChange() {
       if (position) {
         document.getElementById('request-job-title').value = position.jobTitle || '';
         document.getElementById('request-reporting-to').value = position.managerName || '';
-        document.getElementById('request-reporting-to-id').value = position.managerId || '';
+        document.getElementById('request-reporting-to-id').value = position.managerEmployeeId || ''; // Corrected
         document.getElementById('request-division').value = position.division || '';
         document.getElementById('request-group').value = position.group || '';
         document.getElementById('request-department').value = position.department || '';
         document.getElementById('request-section').value = position.section || '';
         document.getElementById('request-level').value = position.level || '';
-        document.getElementById('request-contract-type').value = position.contractType || '';
-        document.getElementById('request-position-status').value = position.positionStatus || '';
+        
+        google.script.run
+          .withSuccessHandler(info => {
+            if (info && info.dateBecameVacant) {
+              document.getElementById('effective-date-request-readonly').value = info.dateBecameVacant;
+            } else {
+              document.getElementById('effective-date-request-readonly').value = '';
+            }
+          })
+          .getLastIncumbentInfo(positionId);
+
       } else {
         // Clear fields if no position is found
         document.getElementById('request-job-title').value = '';
@@ -4807,8 +4837,7 @@ function handleRequestTypeChange() {
         document.getElementById('request-department').value = '';
         document.getElementById('request-section').value = '';
         document.getElementById('request-level').value = '';
-        document.getElementById('request-contract-type').value = '';
-        document.getElementById('request-position-status').value = '';
+        document.getElementById('effective-date-request-readonly').value = '';
       }
     });
   }
@@ -4818,6 +4847,12 @@ function submitRequest() {
   const requestType = document.getElementById('request-type').value;
   if (!requestType) {
     alert('Please select a request type.');
+    return;
+  }
+
+  const approver = document.getElementById('approver-email-select').value;
+  if (!approver) {
+    alert('Please select an approver.');
     return;
   }
 
@@ -4867,6 +4902,7 @@ function submitRequest() {
       EmployeeName: document.querySelector('#employee-request-dropdown .searchable-dropdown-input')?.value,
       CurrentPositionID: document.getElementById('current-position-id')?.value,
       NewPositionID: document.querySelector('#new-position-dropdown .searchable-dropdown-input')?.value,
+      Gender: document.getElementById('request-Gender')?.value,
       NewReportingTo: document.getElementById('request-NewReportingTo')?.value,
       NewReportingToId: document.getElementById('request-NewReportingToId')?.value,
 
@@ -4878,6 +4914,7 @@ function submitRequest() {
       Department: document.querySelector('#request-department-dropdown .searchable-dropdown-input')?.value,
       Section: document.querySelector('#request-section-dropdown .searchable-dropdown-input')?.value,
       ReportingToId: document.getElementById('reporting-to-id-request')?.value,
+      ReportingTo: document.querySelector('#reporting-to-request-dropdown .searchable-dropdown-input')?.value,
       PositionStatus: document.querySelector('#position-status-request-dropdown .searchable-dropdown-input')?.value,
 
       // Replacement fields
@@ -5275,231 +5312,380 @@ function closeDeepDiveModal() {
     document.getElementById('competency-deep-dive-modal').style.display = 'none';
 }
 
-function drawMyRequestsTable() {
-  showSavingOverlay('Loading My Requests...');
-  google.script.run
-    .withSuccessHandler(data => {
-      // *** ADDED CONSOLE LOG ***
-      console.log("Data received for My Requests:", JSON.stringify(data, null, 2)); // Log the raw data received
-
-      const table = $('#my-requests-table');
-      if ($.fn.DataTable.isDataTable(table)) {
-        table.DataTable().destroy();
-      }
-      table.empty(); // Clear previous table structure
-
-      // Check if myRequests exists and has data *after* logging
-      if (!data || !data.myRequests || data.myRequests.length === 0) {
-        console.log("No requests found in data object or data.myRequests is empty."); // Log if no data
-        table.html('<thead><tr><th>Info</th></tr></thead><tbody><tr><td>No requests found.</td></tr></tbody>');
-        hideSavingOverlay();
-        return;
-      }
-
-      console.log(`Found ${data.myRequests.length} request(s) to display.`); // Log the count being processed
-
-      // --- Simplified Column Definition ---
-      // Get headers directly from the first row of the actual data received
-      const headers = Object.keys(data.myRequests[0]);
-      const columns = headers.map(header => {
-          let colDef = { title: header, data: header };
-
-          // Basic Date/Timestamp formatting (more robust handling can be added back if needed)
-          if (header.includes('Timestamp') || header === 'EffectiveDate') {
-              colDef.render = function(d, type, row) {
-                  if (type === 'display' && d) {
-                      try {
-                          return new Date(d).toLocaleString();
-                      } catch (e) { return d; } // Return original if invalid
-                  }
-                  return d;
-              };
-          }
-          // Basic Link handling
-          else if (header === 'SupportingDocuments') {
-              colDef.render = function(d, type, row) {
-                  if (type === 'display' && d && typeof d === 'string' && d.startsWith('<a')) {
-                      // Ensure target blank, basic version
-                      return d.includes('target="_blank"') ? d : d.replace('<a href', '<a target="_blank" href');
-                  }
-                  return d;
-              }
-          }
-          // Default text rendering for safety
-          else {
-              colDef.render = $.fn.dataTable.render.text();
-          }
-          return colDef;
-      });
-      // --- End Simplified Column Definition ---
-
-
-      try { // Add try...catch around DataTable initialization
-          table.DataTable({
-            data: data.myRequests, // Use the received data
-            columns: columns,      // Use the dynamically generated columns
-            responsive: false,
-            scrollX: true,
-            dom: 'Bfrtip',
-            buttons: [
-                'colvis', // Standard column visibility button
-                 {
-                    extend: 'pdfHtml5',
-                    text: 'Export PDF',
-                    title: 'My Change Requests',
-                    orientation: 'landscape'
-                 }
-            ],
-            // Add explicit message for empty table *after* initialization attempt
-             language: {
-                 emptyTable: "No data available in table",
-                 zeroRecords: "No matching records found"
-             }
-          });
-          console.log("DataTable initialized successfully."); // Log success
-      } catch (e) {
-         console.error("Error initializing DataTable:", e); // Log any DataTable errors
-         table.html(`<thead><tr><th>Error</th></tr></thead><tbody><tr><td>Error displaying requests: ${e.message}. See console (F12) for details.</td></tr></tbody>`);
-      }
-
-
-      hideSavingOverlay();
-    })
-    .withFailureHandler(err => {
-      hideSavingOverlay();
-      $('#my-requests-table').html(`<thead><tr><th>Error</th></tr></thead><tbody><tr><td>Error loading requests: ${err.message}. Check browser console (F12) and Apps Script logs.</td></tr></tbody>`);
-      console.error("Error loading My Requests:", err); // Log backend error
-    })
-    .getChangeRequests();
+// Helper to create a category title
+function buildCategory(title) {
+    return `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm"><div class="md:col-span-2 mt-3 mb-1"><h3 class="text-lg font-bold text-slate-700 border-b pb-1">${title}</h3></div></div>`;
 }
 
-function drawApprovalsTable() {
-  showSavingOverlay('Loading Approvals...');
-  google.script.run
-    .withSuccessHandler(data => {
-      const table = $('#approvals-table');
-      if ($.fn.DataTable.isDataTable(table)) {
-        table.DataTable().destroy();
-      }
-      table.empty();
-
-      if (!data || !data.approvals || data.approvals.length === 0) {
-        table.html('<thead><tr><th>Info</th></tr></thead><tbody><tr><td>No pending approvals.</td></tr></tbody>');
-        hideSavingOverlay();
+/**
+ * REBUILT FUNCTION: Shows the request details in the new categorized "Before/After" modal.
+ * This function replaces the original showRequestDetails.
+ */
+function showRequestDetails(requestId, context) {
+    // --- !! GUARD CLAUSE !! ---
+    // This check prevents the function from running if the main employee data hasn't been loaded yet.
+    if (!fullEmployeeData || fullEmployeeData.length === 0) {
+        alert("The main employee data is still loading. Please wait a moment and try again.");
         return;
+    }
+    // --- END GUARD CLAUSE ---
+
+    const modal = document.getElementById('request-details-modal');
+    const title = document.getElementById('request-details-modal-title');
+    const body = document.getElementById('request-details-modal-body');
+    const footer = document.getElementById('request-details-modal-footer');
+
+    title.textContent = `Details for Request ID: ${requestId}`;
+    body.innerHTML = '<p>Loading...</p>';
+    footer.innerHTML = ''; // Clear old buttons
+
+    // Get the specific request data from the global object
+    const requestData = (context === 'my-requests')
+      ? window.allChangeRequests.myRequests.find(r => r.RequestID == requestId)
+      : window.allChangeRequests.approvals.find(r => r.RequestID == requestId);
+
+    if (!requestData) {
+        body.innerHTML = '<p class="text-red-500">Could not find request details.</p>';
+        modal.style.display = 'flex';
+        return;
+    }
+
+    const requestType = requestData.RequestType;
+    let beforeData = {};
+    let afterData = {};
+    let detailsHtml = `<div class="grid grid-cols-1 gap-y-1">`; // Use a single column for categories
+
+    // --- CATEGORIES AND LABELS (Using camelCase keys) ---
+    const categories = {
+        'EMPLOYEE DETAILS': ['employeeName', 'employeeId', 'gender', 'dateHired', 'dateOfBirth'],
+        'JOB DETAILS': ['jobTitle', 'level', 'status', 'contractType', 'competency', 'jobLevel', 'payrollType'],
+        'ORGANIZATIONAL ASSIGNMENT': ['positionId', 'division', 'group', 'department', 'section', 'managerName', 'managerEmployeeId']
+    };
+
+    const keyToLabelMap = {
+        employeeName: 'Name', employeeId: 'Employee ID', gender: 'Gender', dateHired: 'Date Hired', dateOfBirth: 'Date of Birth',
+        jobTitle: 'Job Title', level: 'Level', status: 'Status', contractType: 'Contract Type', contractEndDate: 'Contract End',
+        positionId: 'Position ID', division: 'Division', group: 'Group', department: 'Department', section: 'Section',
+        managerName: 'Reports To (Name)', managerEmployeeId: 'Reports To (ID)',
+        competency: 'Competency', jobLevel: 'Job Level', payrollType: 'Payroll Type',
+        // Request-specific fields
+        RequestID: 'Request ID', RequestorEmail: 'Requestor', SubmissionTimestamp: 'Submitted', Status: 'Status', RequestType: 'RequestType',
+        ApproverEmail: 'Approver', ApprovalTimestamp: 'Approved On', ApproverComments: 'Approver Comments', ImplementerEmail: 'Implemented By',
+        ImplementationTimestamp: 'Implemented On', Justification: 'Justification', EffectiveDate: 'Effective Date',
+        JiraTicket: 'Jira Ticket', SupportingDocuments: 'Documents'
+    };
+
+    // --- Data Preparation ---
+    try {
+        if (requestType.includes('Transfer') || requestType.includes('Promotion')) {
+            const beforePos = fullEmployeeData.find(p => p.positionId === requestData.CurrentPositionID);
+            const afterPosBase = fullEmployeeData.find(p => p.positionId === requestData.NewPositionID);
+            if (!beforePos || !afterPosBase) { throw new Error("Could not find 'before' or 'after' position data. The org chart may have changed."); }
+            
+            // "Before" is the original position
+            beforeData = { ...beforePos };
+            
+            // --- *** THIS IS THE FIX *** ---
+            // "After" is the destination position...
+            // ...explicitly populated with the employee details *from the request data*...
+            // ...and mapped from PascalCase (requestData) to camelCase (for the modal).
+            afterData = { 
+                ...afterPosBase, // Destination position details (e.g., new jobTitle, new manager)
+                
+                // Employee details from the request (requestData)
+                employeeName: requestData.EmployeeName, 
+                employeeId: requestData.EmployeeID,
+                gender: requestData.Gender, 
+                dateHired: requestData.DateHired, 
+                dateOfBirth: requestData.DateOfBirth,
+                
+                // Request status details
+                status: requestData.RequestType, 
+                effectiveDate: requestData.EffectiveDate, 
+                
+                // Explicitly keep destination manager details
+                managerName: afterPosBase.managerName, 
+                managerEmployeeId: afterPosBase.managerEmployeeId
+            };
+            // --- *** END FIX *** ---
+
+        } else if (requestType.includes('replacement for vacancy')) {
+            beforeData = fullEmployeeData.find(p => p.positionId === requestData.VacantPositionID);
+            if (!beforeData) { throw new Error("Could not find the vacant position to be filled."); }
+            afterData = {
+                ...beforeData, status: 'FILLED VACANCY', effectiveDate: requestData.EffectiveDate,
+                // These are blank because a "replacement" request doesn't include new hire details
+                employeeName: '', employeeId: '', gender: '', dateHired: '', dateOfBirth: ''
+            };
+        } else if (requestType.includes('newly created position')) {
+            beforeData = {}; 
+            afterData = {
+                ...requestData, // Contains PascalCase keys from the request
+                // Map PascalCase from request to camelCase for the modal
+                positionId: 'TBD (New)', 
+                status: 'VACANT', 
+                jobTitle: requestData.NewJobTitle,
+                level: requestData.NewLevel,
+                managerName: requestData.ReportingTo, 
+                managerEmployeeId: requestData.ReportingToId,
+                // Blank employee details
+                employeeName: '', employeeId: '', gender: '', dateHired: '', dateOfBirth: ''
+            };
+        }
+    } catch (e) {
+        body.innerHTML = `<p class="text-red-500">Error preparing comparison: ${e.message}</p>`;
+        footer.innerHTML = `<button onclick="closeRequestDetailsModal()" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Close</button>`;
+        modal.style.display = 'flex';
+        return;
+    }
+    
+    // --- Build HTML (Comparison Sections) ---
+    for (const [category, keys] of Object.entries(categories)) {
+        let categoryHtml = '';
+
+        // This correctly skips the employee section for non-promotion/transfer requests
+        if (category === 'EMPLOYEE DETAILS' && !(requestType.includes('Transfer') || requestType.includes('Promotion'))) {
+            continue;
+        }
+
+        for (const key of keys) {
+            // key is camelCase (e.g., 'employeeName')
+            const dataKey = key; 
+            
+            if (beforeData[dataKey] || afterData[dataKey] || (beforeData[dataKey] !== afterData[dataKey])) {
+                
+                const label = keyToLabelMap[key] || key;
+                
+                // --- *** THIS IS THE SECOND FIX *** ---
+                // Removed the flawed logical swap. "Before" is always beforeData. "After" is always afterData.
+                let beforeStr = (beforeData[dataKey] === null || typeof beforeData[dataKey] === 'undefined') ? '' : String(beforeData[dataKey]);
+                let afterStr = (afterData[dataKey] === null || typeof afterData[dataKey] === 'undefined') ? '' : String(afterData[dataKey]);
+                // --- *** END FIX *** ---
+                
+                const before = beforeStr || '<i class="text-gray-400">N/A</i>';
+                const after = afterStr || '<i class="text-gray-400">N/A</i>';
+
+                let afterClass = 'text-gray-800 text-left whitespace-nowrap';
+                // This comparison now works correctly
+                if (beforeStr !== afterStr) {
+                    afterClass = 'text-blue-600 font-bold bg-blue-100 px-1 rounded text-left whitespace-nowrap';
+                }
+                
+                categoryHtml += `
+                    <div class="font-semibold text-gray-600 text-left py-2">${label}:</div>
+                    <div class="text-gray-500 text-left py-2 whitespace-nowrap">${before}</div>
+                    <div class="${afterClass} py-2">${after}</div>
+                `;
+            }
+        }
+        
+        if (categoryHtml) {
+            detailsHtml += buildCategory(category);
+            
+            detailsHtml += `
+                <div class="grid grid-cols-[160px,1fr,1fr] gap-x-4">
+                    <div class="py-2"></div>
+                    <div class="font-bold text-gray-800 text-left py-2">Before</div>
+                    <div class="font-bold text-gray-800 text-left py-2">After</div>
+                    
+                    ${categoryHtml}
+                </div>
+            `;
+        }
+    }
+    
+    // --- Add Request-Specific Details (non-comparison) ---
+    detailsHtml += buildCategory('REQUEST DETAILS');
+    const requestFields = ['RequestID', 'RequestType', 'Status', 'RequestorEmail', 'SubmissionTimestamp', 'ApproverEmail', 'ApprovalTimestamp', 'ImplementerEmail', 'ImplementationTimestamp', 'EffectiveDate', 'Justification', 'ApproverComments', 'JiraTicket', 'SupportingDocuments'];
+    
+    requestFields.forEach(key => {
+        if (requestData.hasOwnProperty(key) && requestData[key]) {
+            // Don't show effective date here if it was already shown in the 'after' column
+            if (key === 'EffectiveDate' && (requestType.includes('replacement') || requestType.includes('Transfer') || requestType.includes('Promotion'))) { return; }
+            
+            let value = requestData[key];
+            if (key === 'SupportingDocuments') {
+                value = `<button onclick="openDocumentViewer('${requestData.RequestID}')" class="text-blue-600 hover:underline">View Documents</button>`;
+            } else if (key.includes('Timestamp') && value) {
+                value = new Date(value).toLocaleDateString() + ' ' + new Date(value).toLocaleTimeString();
+            } else if (key === 'EffectiveDate' && value) {
+                value = new Date(value).toLocaleDateString();
+            }
+            
+            detailsHtml += `
+                <div class="grid grid-cols-[160px,1fr] gap-x-4 items-start py-2">
+                    <div class="font-semibold text-gray-600 text-left">${keyToLabelMap[key] || key}:</div>
+                    <div class="text-gray-800">${value}</div>
+                </div>
+            `;
+        }
+    });
+
+    detailsHtml += `</div>`;
+    body.innerHTML = detailsHtml;
+
+    // --- Footer & Action Buttons (Unchanged) ---
+    footer.innerHTML = `<button onclick="closeRequestDetailsModal()" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Close</button>`;
+    let actionButtons = '';
+    if (['Pending', 'Approved', 'Implemented'].includes(requestData.Status)) {
+      actionButtons += `<button onclick="openPreviewModal('${requestId}')" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Preview Change</button>`;
+    }
+    if (context === 'approvals') {
+      if (requestData.Status === 'Pending') {
+        actionButtons += `
+          <button onclick="handleApprovalAction('${requestId}', 'Approved')" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Approve</button>
+          <button onclick="handleApprovalAction('${requestId}', 'Rejected')" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Reject</button>
+          <button onclick="handleApprovalAction('${requestId}', 'Returned')" class="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">Return</button>
+        `;
+      } else if (requestData.Status === 'Approved' && userCanApprove && requestData.RequestType !== 'Hiring of a new employee (replacement for vacancy)') {
+           actionButtons += `<button onclick="handleImplementAction('${requestId}')" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Implement Change</button>`;
       }
+    }
+    
+    footer.innerHTML = actionButtons + footer.innerHTML;
+    modal.style.display = 'flex';
+}
 
-      // **Explicitly define columns**
-      const expectedHeaders = [
-          "RequestID", "RequestorEmail", "SubmissionTimestamp", "Status", "RequestType",
-          "ApproverEmail", // Keep this if you want to show who it's assigned to
-          // "ApprovalTimestamp", "ApproverComments", // Often less relevant in the *pending* list
-          "EmployeeID", "EmployeeName", "NewPositionID", "EffectiveDate",
-          "VacantPositionID", "NewEmployeeID", "NewEmployeeName",
-          "NewJobTitle", "NewLevel", "Division", "Group", "Department", "Section", "ReportingToId",
-          "SupportingDocuments", "Justification"
-          // "ImplementerEmail", "ImplementationTimestamp" // Not relevant for pending
-      ];
+function closeRequestDetailsModal() {
+  document.getElementById('request-details-modal').style.display = 'none';
+}
 
-      const actualHeaders = Object.keys(data.approvals[0]);
-      const columns = expectedHeaders
-        .filter(header => actualHeaders.includes(header)) // Only include headers present in the data
-        .map(header => {
-            let colDef = { title: header, data: header };
-             // --- Date/Timestamp Formatting ---
-             if (header.includes('Timestamp') || header === 'EffectiveDate') {
-                colDef.render = function(data, type, row) {
-                    if (type === 'display' && data) {
-                         try {
-                             // Use toLocaleString for user's local time format
-                             return new Date(data).toLocaleString();
-                         } catch (e) {
-                             return data; // Return original if parsing fails
-                         }
-                    }
-                    return data; // Return raw data for sorting/filtering
-                };
-             }
-             // --- Link Formatting ---
-             else if (header === 'SupportingDocuments') {
-                 colDef.render = function(data, type, row) {
-                    // Make sure it's a link and add target="_blank" if missing
-                    if (type === 'display' && data && typeof data === 'string' && data.startsWith('<a')) {
-                        // Basic check and add target blank
-                        return data.includes('target="_blank"') ? data : data.replace('<a href', '<a target="_blank" href');
-                    }
-                    return data; // Return raw data or non-link content
-                 }
-             }
-             // --- Default Text Rendering ---
-              else {
-                  // Ensure plain text rendering to prevent potential XSS from data
-                   colDef.render = $.fn.dataTable.render.text();
+function renderMyRequestsTable() {
+    const requests = window.allChangeRequests ? window.allChangeRequests.myRequests : [];
+    const table = $('#my-requests-table');
+    if ($.fn.DataTable.isDataTable(table)) {
+        table.DataTable().destroy();
+    }
+    table.empty();
+
+    if (!requests || requests.length === 0) {
+        table.html('<thead><tr><th>Info</th></tr></thead><tbody><tr><td>No requests found.</td></tr></tbody>');
+        return;
+    }
+
+    table.DataTable({
+        data: requests,
+            columns: [
+            { title: 'Request ID', data: 'RequestID', render: function(data, type, row) {
+                return `<span class="text-blue-600 hover:underline cursor-pointer" onclick="showRequestDetails('${row.RequestID}', 'my-requests')">${data}</span>`;
               }
-            return colDef;
-        });
+            },
+            { title: 'Requestor', data: 'RequestorEmail' },
+            { title: 'Type of Request', data: 'RequestType' },
+            { title: 'Status', data: 'Status' },
+            {
+              title: 'Documents',
+              data: 'SupportingDocuments',
+              render: function(data, type, row) {
+                if (row.SupportingDocuments) { 
+                  return `<button onclick="openDocumentViewer('${row.RequestID}')" class="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">View</button>`;
+                }
+                return 'N/A';
+              },
+              className: 'text-center'
+            }
+        ],
+        responsive: false,
+        scrollX: true,
+        dom: 'Bfrtip',
+        buttons: ['colvis']
+    });
+}
 
-      // Add the Actions column WITH PREVIEW BUTTON
-      columns.push({
-        title: 'Actions',
-        data: null, // We'll use the whole row object
-        orderable: false,
-        render: function(data, type, row) {
-          const escapedRequestId = String(row.RequestID).replace(/'/g, "\\'");
-          let buttons = `<button onclick="openPreviewModal('${escapedRequestId}')" class="bg-indigo-500 text-white p-1 rounded text-xs mr-1 mb-1 sm:mb-0" title="Preview Change">Preview</button>`;
-          
-          if (row.Status === 'Approved') {
-            buttons += `<button onclick="handleImplementAction('${escapedRequestId}')" class="bg-blue-600 text-white p-1 rounded text-xs" title="Implement Change">Implement</button>`;
-          } else if (row.Status === 'Pending') {
-            buttons += `<button onclick="handleApprovalAction('${escapedRequestId}', 'Approved')" class="bg-green-500 text-white p-1 rounded text-xs mr-1 mb-1 sm:mb-0" title="Approve Request">Approve</button>
-                        <button onclick="handleApprovalAction('${escapedRequestId}', 'Rejected')" class="bg-red-500 text-white p-1 rounded text-xs" title="Reject Request">Reject</button>`;
-          }
-          
-          return buttons;
-        }
-      });
+function renderApprovalsTable() {
+    const requests = window.allChangeRequests ? window.allChangeRequests.approvals : [];
+    const table = $('#approvals-table');
+    if ($.fn.DataTable.isDataTable(table)) {
+        table.DataTable().destroy();
+    }
+    table.empty();
 
-        try { // Add try...catch around DataTable initialization
-            table.DataTable({
-              data: data.approvals,
-              columns: columns,
-              responsive: false,
-              scrollX: true,
-              dom: 'Bfrtip', // Added 'B' for buttons
-              buttons: [
-                  'colvis', // Standard column visibility button
-                   {
-                      extend: 'pdfHtml5',
-                      text: 'Export PDF',
-                      title: 'Pending Approvals',
-                      orientation: 'landscape'
-                   }
-              ],
-               language: {
-                   emptyTable: "No data available in table",
-                   zeroRecords: "No matching records found"
-               }
-               // Removed explicit columnDefs render text, relying on individual renders
-            });
-        } catch (e) {
-           console.error("Error initializing Approvals DataTable:", e);
-           table.html(`<thead><tr><th>Error</th></tr></thead><tbody><tr><td>Error displaying approvals: ${e.message}. See console (F12) for details.</td></tr></tbody>`);
-        }
+    if (!requests || requests.length === 0) {
+        table.html('<thead><tr><th>Info</th></tr></thead><tbody><tr><td>No requests found.</td></tr></tbody>');
+        return;
+    }
 
-      hideSavingOverlay();
-    })
-    .withFailureHandler(err => {
-      hideSavingOverlay();
-      $('#approvals-table').html(`<thead><tr><th>Error</th></tr></thead><tbody><tr><td>Error loading approvals: ${err.message}. Check browser console (F12) and Apps Script logs.</td></tr></tbody>`);
-      console.error("Error loading Approvals:", err);
-    })
-    .getChangeRequests();
+    table.DataTable({
+        data: requests,
+        columns: [
+            { title: 'Request ID', data: 'RequestID', render: function(data, type, row) {
+                return `<span class="text-blue-600 hover:underline cursor-pointer" onclick="showRequestDetails('${row.RequestID}', 'approvals')">${data}</span>`;
+              }
+            },
+            { title: 'Requestor', data: 'RequestorEmail' },
+            { title: 'Type of Request', data: 'RequestType' },
+            { title: 'Status', data: 'Status' },
+            {
+              title: 'Documents',
+              data: 'SupportingDocuments',
+              render: function(data, type, row) {
+                if (row.SupportingDocuments) {
+                  return `<button onclick="openDocumentViewer('${row.RequestID}')" class="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">View</button>`;
+                }
+                return 'N/A';
+              },
+              className: 'text-center'
+            }
+        ],
+        responsive: false,
+        scrollX: true,
+        dom: 'Bfrtip',
+        buttons: ['colvis']
+    });
+}
+
+function loadChangeRequestData(callback) {
+    showSavingOverlay('Loading Change Requests...');
+    google.script.run
+        .withSuccessHandler(data => {
+            hideSavingOverlay();
+            // ROBUSTNESS FIX: Handle cases where data is already an object or a string
+            if (typeof data === 'string') {
+              window.allChangeRequests = JSON.parse(data);
+            } else {
+              window.allChangeRequests = data;
+            }
+            // changeRequestsDataLoaded = true; // This line is now removed
+            if (callback) callback();
+        })
+        .withFailureHandler(err => {
+            hideSavingOverlay();
+            $('#my-requests-table').html(`<thead><tr><th>Error</th></tr></thead><tbody><tr><td>Error loading requests: ${err.message}.</td></tr></tbody>`);
+            $('#approvals-table').html(`<thead><tr><th>Error</th></tr></thead><tbody><tr><td>Error loading approvals: ${err.message}.</td></tr></tbody>`);
+        })
+        .getChangeRequests();
+}
+
+function refreshChangeRequestData() {
+  // changeRequestsDataLoaded = false; // Invalidate the cache - This line is now removed
+  
+  // Determine which tab is currently active to decide which table to redraw
+  const myRequestsTabActive = document.getElementById('my-requests-view').classList.contains('active');
+  const approvalsTabActive = document.getElementById('approvals-view').classList.contains('active');
+
+  if (myRequestsTabActive) {
+    loadChangeRequestData(renderMyRequestsTable);
+  } else if (approvalsTabActive) {
+    loadChangeRequestData(renderApprovalsTable);
+  }
+  
+  // Also refresh the notification badges
+  google.script.run.withSuccessHandler(updateNotificationBadges).getRequestCounts();
 }
 
 function handleApprovalAction(requestId, action) {
-  const comments = prompt(`Please provide comments for this action (${action}):`);
-  if (comments === null) { // User cancelled the prompt
-    return;
+  let comments = '';
+  if (action === 'Returned' || action === 'Rejected') {
+    comments = prompt(`Comments are required for this action (${action}):`);
+    if (comments === null) return;
+    if (!comments.trim()) {
+      alert('You must provide comments to ' + action.toLowerCase() + ' a request.');
+      return;
+    }
+  } else {
+    // For "Approve", comments are optional.
+    comments = prompt(`Please provide optional comments for this action (${action}):`);
+    if (comments === null) return; // User clicked cancel, so we stop.
   }
   
   showSavingOverlay('Processing Action...');
@@ -5507,7 +5693,13 @@ function handleApprovalAction(requestId, action) {
     .withSuccessHandler(response => {
       hideSavingOverlay();
       alert(response);
-      drawApprovalsTable(); // Refresh the table
+      closeRequestDetailsModal();
+      
+      // Force a refresh of the data and redraw the currently active table
+      // changeRequestsDataLoaded = false; // This line is now removed
+      loadChangeRequestData(renderApprovalsTable); // Redraw the approvals table specifically
+
+      google.script.run.withSuccessHandler(updateNotificationBadges).getRequestCounts();
     })
     .withFailureHandler(err => {
       hideSavingOverlay();
@@ -5527,13 +5719,21 @@ function handleImplementAction(requestId) {
       hideSavingOverlay();
       // NEW: Check for the 'success' property in the response object
       if (response && response.success) {
-        alert(response.message); // Show the success message from the backend
-        // Full data refresh to update the main org chart and remove the implemented item from the approvals list.
-        fetchData();
-        drawApprovalsTable();
+        alert(response.message);
+        closeRequestDetailsModal();
+        
+        // Full data refresh for the main org chart
+        fetchData(); 
+        
+        // Force a refresh of the request list to show the "Implemented" status
+        // changeRequestsDataLoaded = false; // This line is now removed
+        loadChangeRequestData(renderApprovalsTable);
+
+        // Also refresh the notification badges
+        google.script.run.withSuccessHandler(updateNotificationBadges).getRequestCounts();
       } else {
         // If the backend returns a structured error, display it. Otherwise, show a generic failure message.
-        alert('Implementation Failed: ' + (response ? response.error : 'An unknown error occurred on the server.'));
+        alert('Implementation Failed: ' (response ? response.error : 'An unknown error occurred on the server.'));
       }
     })
     .withFailureHandler(err => {
@@ -5662,6 +5862,64 @@ function closePreviewModal() {
     previewHighlightIds = [];
     previewChangeDescription = '';
 }
+
+// --- NEW DOCUMENT VIEWER FUNCTIONS ---
+
+/**
+ * Initiates the process of viewing documents for a request.
+ * Calls the backend to get a list of files.
+ */
+function openDocumentViewer(requestId) {
+    const modal = document.getElementById('jd-modal');
+    const title = document.getElementById('jd-modal-title');
+    const contentArea = document.getElementById('jd-content-area');
+
+    title.textContent = `Documents for Request ${requestId}`;
+    contentArea.innerHTML = '<div class="flex justify-center items-center h-full"><div id="loader"></div><p class="ml-4">Finding documents...</p></div>';
+    modal.style.display = 'flex';
+
+    google.script.run
+        .withSuccessHandler(fileList => {
+            if (fileList.error) {
+                contentArea.innerHTML = `<p class="text-red-500 text-center font-bold">Error: ${fileList.error}</p>`;
+                return;
+            }
+
+            if (fileList.length === 0) {
+                contentArea.innerHTML = '<p class="text-center text-gray-600 font-bold">No documents are attached to this request.</p>';
+            } else if (fileList.length === 1) {
+                // If there's only one file, show it directly.
+                showDocumentInViewer(fileList[0].url);
+            } else {
+                // If there are multiple files, show a selection list.
+                let buttonsHtml = '<p class="mb-4">Please select a document to view:</p><div class="flex flex-col space-y-2">';
+                fileList.forEach(file => {
+                    // We need to escape the URL to handle special characters in file names
+                    const escapedUrl = escape(file.url);
+                    buttonsHtml += `<button onclick="showDocumentInViewer(unescape('${escapedUrl}'))" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">${escapeHtml(file.name)}</button>`;
+                });
+                buttonsHtml += '</div>';
+                contentArea.innerHTML = buttonsHtml;
+            }
+        })
+        .withFailureHandler(err => {
+            contentArea.innerHTML = `<p class="text-red-500 text-center font-bold">Failed to retrieve documents. Error: ${err.message}</p>`;
+        })
+        .getRequestDocumentList(requestId);
+}
+
+/**
+ * Renders the selected document in the iframe viewer.
+ */
+function showDocumentInViewer(url) {
+    const contentArea = document.getElementById('jd-content-area');
+    if (url && url.startsWith('http')) {
+        contentArea.innerHTML = `<iframe src="${url}" style="width:100%; height:60vh; border:none;"></iframe>`;
+    } else {
+        contentArea.innerHTML = '<p class="text-center text-red-600 font-bold">Invalid document URL provided.</p>';
+    }
+}
+// --- END NEW FUNCTIONS ---
 
 function zoomPreview(amount) {
     currentPreviewZoom = Math.max(0.2, currentPreviewZoom + amount);
