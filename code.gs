@@ -156,11 +156,12 @@ function implementApprovedChange(requestId) {
             }
           }
           // --- END FIX ---
-
+          const employeeGender = _getEmployeeGender(employeeId);
           dataToSave = {
             positionid: rowData[headerMap.get('NewPositionID')],
             employeeid: employeeId, // Use the potentially retrieved employeeId
             employeename: rowData[headerMap.get('EmployeeName')],
+            gender: employeeGender,
             datehired: rowData[headerMap.get('DateHired')],
             dateofbirth: rowData[headerMap.get('DateOfBirth')],
             status: requestType,
@@ -170,8 +171,6 @@ function implementApprovedChange(requestId) {
           logToSheet('Processing Replacement for Vacancy logic.');
           dataToSave = {
             positionid: rowData[headerMap.get('VacantPositionID')],
-            employeeid: rowData[headerMap.get('NewEmployeeID')],
-            employeename: rowData[headerMap.get('NewEmployeeName')],
             status: 'FILLED VACANCY',
             startdateinposition: rowData[headerMap.get('EffectiveDate')]
           };
@@ -195,9 +194,11 @@ function implementApprovedChange(requestId) {
             department: rowData[headerMap.get('Department')],
             section: section,
             reportingtoid: rowData[headerMap.get('ReportingToId')],
-            status: 'NEW HIRE',
-            employeename: rowData[headerMap.get('NewEmployeeName')],
-            employeeid: rowData[headerMap.get('NewEmployeeID')],
+            reportingto: rowData[headerMap.get('ReportingTo')],
+            status: 'VACANT',
+            positionstatus: 'Active',
+            employeename: '',
+            employeeid: '',
           };
           mode = 'add';
         }
@@ -238,6 +239,47 @@ function implementApprovedChange(requestId) {
   } catch (e) {
     logToSheet('FATAL Error in implementApprovedChange: ' + e.message + ' Stack: ' + e.stack);
     return { success: false, error: 'Failed to implement request. ' + e.message };
+  }
+}
+
+function _getEmployeeGender(employeeId) {
+  if (!employeeId) return '';
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const allSheets = ss.getSheets();
+    let mainSheet = null;
+
+    // Find the correct sheet by looking for key headers
+    for (const sheet of allSheets) {
+      if (sheet.getLastRow() > 0 && sheet.getLastColumn() > 1) {
+        const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        if (headers.includes('Employee ID') && headers.includes('Gender')) {
+          mainSheet = sheet;
+          break;
+        }
+      }
+    }
+
+    // If no sheet is found, fallback to the first sheet as a last resort.
+    if (!mainSheet) {
+        mainSheet = allSheets[0];
+    }
+
+    const data = mainSheet.getDataRange().getValues();
+    const headers = data[0];
+    const empIdIndex = headers.indexOf('Employee ID');
+    const genderIndex = headers.indexOf('Gender');
+    if (empIdIndex === -1 || genderIndex === -1) return '';
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][empIdIndex]).trim() === String(employeeId).trim()) {
+        return data[i][genderIndex] || '';
+      }
+    }
+    return ''; // Return empty string if employee not found
+  } catch (e) {
+    Logger.log(`Error in _getEmployeeGender: ${e.message}`);
+    return ''; // Return empty string on error
   }
 }
 
@@ -294,85 +336,82 @@ function getChangeRequests() {
     const sheet = ss.getSheetByName('Org Chart Requests');
     if (!sheet || sheet.getLastRow() < 2) {
       Logger.log('Sheet "Org Chart Requests" not found or empty.');
-      return { myRequests: [], approvals: [] };
+      return JSON.stringify({ myRequests: [], approvals: [] });
     }
-    
     const data = sheet.getDataRange().getValues();
-    const headers = data.shift(); // Keep original headers for object keys
+    const headers = data.shift();
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    Logger.log('User Email: ' + userEmail);
+    Logger.log('Headers: ' + headers.join(', '));
 
-    // Create a normalized map to find column indices reliably
-    const normalizedHeaderMap = new Map();
-    headers.forEach((header, i) => {
-      const normalizedKey = (header || '').toString().toLowerCase().replace(/\s+/g, '');
-      if (normalizedKey) {
-        normalizedHeaderMap.set(normalizedKey, i);
-      }
-    });
 
-    // Get indices using the normalized map
-    const requestorEmailIndex = normalizedHeaderMap.get('requestoremail');
-    const approverEmailIndex = normalizedHeaderMap.get('approveremail');
-    const statusIndex = normalizedHeaderMap.get('status');
-    const supportDocIndex = normalizedHeaderMap.get('supportingdocuments');
-    const submissionTimestampIndex = normalizedHeaderMap.get('submissiontimestamp');
-
-    if (requestorEmailIndex === undefined || approverEmailIndex === undefined || statusIndex === undefined) {
-      const errorMessage = "Missing required columns (RequestorEmail, ApproverEmail, or Status). Please check the 'Org Chart Requests' sheet headers.";
-      Logger.log(errorMessage + " Headers found: " + headers.join(', '));
-      throw new Error(errorMessage);
-    }
-
+    // First, process all rows into a standardized 'requests' array
     const requests = data.map(row => {
-      const request = {};
+      let request = {};
       headers.forEach((header, i) => {
-        // Use original headers for the keys in the final objects
-        if (i === supportDocIndex && row[i]) {
-          request[header] = `<a href="${row[i]}" target="_blank">View Documents</a>`;
-        } else if (row[i] instanceof Date) {
-          // Format all dates consistently
-          request[header] = Utilities.formatDate(row[i], Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
-        } else {
-          request[header] = row[i];
+        let value = row[i];
+        // Standardize date formats upfront
+        if (header.toLowerCase().includes('date') && value instanceof Date) {
+            value = Utilities.formatDate(new Date(value), Session.getScriptTimeZone(), "yyyy-MM-dd");
         }
+        request[header.replace(/\s+/g, '')] = value;
       });
       return request;
     });
 
-    // Use original header names for filtering, which are now guaranteed to exist
-    const requestorEmailHeader = headers[requestorEmailIndex];
-    const approverEmailHeader = headers[approverEmailIndex];
-    const statusHeader = headers[statusIndex];
-    const submissionTimestampHeader = headers[submissionTimestampIndex];
+    // Find the actual keys for email columns, case-insensitively
+    const requestorKey = headers.find(h => (h || '').toLowerCase().replace(/\s+/g, '') === 'requestoremail')?.replace(/\s+/g, '');
+    const approverKey = headers.find(h => (h || '').toLowerCase().replace(/\s+/g, '') === 'approveremail')?.replace(/\s+/g, '');
 
-    const myRequests = requests.filter(r =>
-      (r[requestorEmailHeader] || '').toString().toLowerCase().trim() === userEmail
+    Logger.log(`Dynamically found keys -> Requestor: '${requestorKey}', Approver: '${approverKey}'`);
+
+    if (!approverKey) {
+      Logger.log('CRITICAL: Could not find a valid ApproverEmail key from headers. Filtering will fail.');
+    }
+
+    // Filter for 'My Requests'
+    const myRequests = requests.filter(r => 
+      (r[requestorKey] || '').toString().toLowerCase().trim() === userEmail
     );
 
     const approvals = requests.filter(r => {
-      const status = (r[statusHeader] || '').toString().toLowerCase().trim();
-      return (status === 'pending' || status === 'approved' || status === 'implemented') &&
-             (r[approverEmailHeader] || '').toString().toLowerCase().trim() === userEmail;
+      const approverEmail = (r[approverKey] || '').toString().toLowerCase().trim();
+      // This log is still useful for checking the actual values
+      Logger.log(`Checking row: Value in column '${approverKey}' is '${approverEmail}'. Match with '${userEmail}': ${approverEmail === userEmail}`);
+      return approverEmail === userEmail;
     });
 
-    // Sort using the dynamically found timestamp header
+    // Sort both lists by submission timestamp, newest first
     const sortByTimestampDesc = (a, b) => {
-      const dateA = a[submissionTimestampHeader] ? new Date(a[submissionTimestampHeader]) : new Date(0);
-      const dateB = b[submissionTimestampHeader] ? new Date(b[submissionTimestampHeader]) : new Date(0);
-      return dateB - dateA;
+        const dateA = new Date(a.SubmissionTimestamp || 0);
+        const dateB = new Date(b.SubmissionTimestamp || 0);
+        return dateB - dateA;
     };
 
     myRequests.sort(sortByTimestampDesc);
     approvals.sort(sortByTimestampDesc);
 
-    const resultObject = { myRequests, approvals };
-    Logger.log('Successfully prepared data. My Requests: ' + myRequests.length + ', Approvals: ' + approvals.length);
-    return resultObject;
+    // Create the final object with formatted link fields for the frontend
+    const resultObject = {
+        myRequests: myRequests.map(r => ({
+            ...r,
+            JiraTicket: r.JiraTicket ? `<a href="${r.JiraTicket}" target="_blank">${r.JiraTicket.substring(r.JiraTicket.lastIndexOf('/') + 1)}</a>` : 'N/A',
+            SupportingDocuments: r.SupportingDocuments ? `<a href="${r.SupportingDocuments}" target="_blank">View</a>` : 'N/A'
+        })),
+        approvals: approvals.map(r => ({
+            ...r,
+            JiraTicket: r.JiraTicket ? `<a href="${r.JiraTicket}" target="_blank">${r.JiraTicket.substring(r.JiraTicket.lastIndexOf('/') + 1)}</a>` : 'N/A',
+            SupportingDocuments: r.SupportingDocuments ? `<a href="${r.SupportingDocuments}" target="_blank">View</a>` : 'N/A'
+        }))
+    };
+    
+    Logger.log('getChangeRequests function finished successfully. Found ' + myRequests.length + ' myRequests and ' + approvals.length + ' approvals.');
+    return JSON.stringify(resultObject);
 
   } catch (e) {
     Logger.log('FATAL Error in getChangeRequests: ' + e.message + ' Stack: ' + e.stack);
-    // Return a safe, empty object to prevent frontend errors
-    return { myRequests: [], approvals: [] };
+    // Return a valid empty object on error to prevent frontend from breaking
+    return JSON.stringify({ myRequests: [], approvals: [] });
   }
 }
 
@@ -393,6 +432,7 @@ function getEmployeeDetails(employeeName) {
     const empIdIndex = headers.indexOf('Employee ID');
     const dateHiredIndex = headers.indexOf('Date Hired');
     const dobIndex = headers.indexOf('Date of Birth');
+    const genderIndex = headers.indexOf('Gender');
 
     if (empNameIndex === -1 || empIdIndex === -1 || dateHiredIndex === -1 || dobIndex === -1) {
       return null;
@@ -406,13 +446,56 @@ function getEmployeeDetails(employeeName) {
       return {
         employeeId: employeeRow[empIdIndex],
         dateHired: dateHired,
-        dateOfBirth: dateOfBirth
+        dateOfBirth: dateOfBirth,
+        gender: employeeRow[genderIndex]
       };
     }
     return null;
   } catch (e) {
     Logger.log(`Error in getEmployeeDetails: ${e.toString()}`);
     return null;
+  }
+}
+
+
+function getLastIncumbentInfo(positionId) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const logSheet = ss.getSheetByName('change_log_sheet');
+    if (!logSheet || logSheet.getLastRow() < 2) {
+      return { dateBecameVacant: null };
+    }
+
+    const logData = logSheet.getDataRange().getValues();
+    const headers = logData.shift();
+    const posIdIndex = headers.indexOf('Position ID');
+    const empIdIndex = headers.indexOf('Employee ID');
+    const effectiveDateIndex = headers.indexOf('Effective Date');
+    const timestampIndex = headers.indexOf('Change Timestamp');
+
+    if (posIdIndex === -1 || empIdIndex === -1 || effectiveDateIndex === -1 || timestampIndex === -1) {
+      return { dateBecameVacant: null };
+    }
+
+    const relevantEvents = logData
+      .filter(row => row[posIdIndex] === positionId && row[empIdIndex]) // Find all events for this position with an incumbent
+      .map(row => new Date(row[effectiveDateIndex] || row[timestampIndex])) // Get the date
+      .filter(date => !isNaN(date.getTime())); // Filter out invalid dates
+
+    if (relevantEvents.length === 0) {
+      return { dateBecameVacant: null };
+    }
+
+    // Sort descending to get the most recent date
+    relevantEvents.sort((a, b) => b.getTime() - a.getTime());
+
+    const lastDate = Utilities.formatDate(relevantEvents[0], Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    
+    return { dateBecameVacant: lastDate };
+
+  } catch (e) {
+    Logger.log(`Error in getLastIncumbentInfo: ${e.toString()}`);
+    return { dateBecameVacant: null };
   }
 }
 
@@ -1645,7 +1728,7 @@ function saveEmployeeData(dataObject, mode) {
 
             if (dataObject.status.toUpperCase() === 'VACANT' && originalEmployeeId) {
                 isManualVacate = true;
-                vacatingEmployeeId = originalEmployeeId.toUpperCase();
+                vacatingEmployeeId = String(originalEmployeeId).toUpperCase();
                 vacatedPositionId = positionId;
             }
 
@@ -1802,8 +1885,20 @@ function generateIncumbencyReport() {
   const ui = SpreadsheetApp.getUi();
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const mainSheet = spreadsheet.getSheets()[0];
-  const mainData = mainSheet.getLastRow() > 1 ? mainSheet.getRange(2, 1, mainSheet.getLastRow() - 1, 3).getValues() : [];
-  const mainDataMap = new Map(mainData.map(row => [row[0], row]));
+  const mainData = mainSheet.getLastRow() > 1 ? mainSheet.getRange(2, 1, mainSheet.getLastRow() - 1, mainSheet.getLastColumn()).getValues() : [];
+  const mainDataMap = new Map();
+  const mainHeader = mainSheet.getRange(1,1,1,mainSheet.getLastColumn()).getValues()[0];
+  const posIdHeaderIndex = mainHeader.indexOf('Position ID');
+  const empIdHeaderIndex = mainHeader.indexOf('Employee ID');
+  const empNameHeaderIndex = mainHeader.indexOf('Employee Name');
+
+  mainData.forEach(row => {
+    mainDataMap.set(row[posIdHeaderIndex], {
+        employeeId: (row[empIdHeaderIndex] || '').toString().trim(),
+        employeeName: (row[empNameHeaderIndex] || '').toString().trim()
+    });
+  });
+
 
   const logSheet = spreadsheet.getSheetByName('change_log_sheet');
   const reportSheetName = 'Incumbency History';
@@ -1820,48 +1915,20 @@ function generateIncumbencyReport() {
   const finalHistoryRecords = [];
   const sortedPosIds = Object.keys(allHistory).sort();
 
-  const allLogDataNoHeaders = logSheet.getRange(2, 1, logSheet.getLastRow() - 1, logSheet.getLastColumn()).getValues();
-
   for (const posId of sortedPosIds) {
     const records = allHistory[posId];
     if (!records || records.length === 0) continue;
 
-    const lastRecord = records[records.length - 1];
-    const currentLiveRow = mainDataMap.get(posId);
-    const currentLiveEmployeeId = currentLiveRow ? (currentLiveRow[1] || '').toString().trim() : null;
-    const isCurrentlyVacant = !currentLiveEmployeeId;
-
-    // Correction 1: If the last incumbent is the current employee, ensure end date is 'Present'.
-    if (lastRecord.incumbentId && currentLiveEmployeeId && lastRecord.incumbentId === currentLiveEmployeeId && lastRecord.endDate) {
-      lastRecord.endDate = null;
-    }
-
-    // Correction 2 (Failsafe): If history says 'Present' but the position is vacant, find the true end date.
-    if (lastRecord.endDate === null && isCurrentlyVacant) {
-      const posIdIndex = headers.indexOf('Position ID');
-      const effectiveDateIndex = headers.indexOf('Effective Date');
-      const timestampIndex = headers.indexOf('Change Timestamp');
-
-      const allEventsForPos = allLogDataNoHeaders
-        .filter(row => row[posIdIndex] === posId)
-        .map(row => ({ date: _parseDate(row[effectiveDateIndex]) || _parseDate(row[timestampIndex]) }))
-        .filter(event => event.date)
-        .sort((a, b) => b.date.getTime() - a.date.getTime());
-
-      if (allEventsForPos.length > 0) {
-        lastRecord.endDate = allEventsForPos[0].date;
-      }
-    }
-
     records.forEach(rec => {
-      const tenure = (rec.startDate && (rec.endDate || new Date())) ? Math.round(((rec.endDate || new Date()) - rec.startDate) / (1000 * 60 * 60 * 24)) : 0;
+      const tenure = (rec.startDate && rec.endDate) ? Math.round((rec.endDate - rec.startDate) / (1000 * 60 * 60 * 24)) : 'N/A';
       finalHistoryRecords.push([
         posId,
         rec.jobTitle,
         rec.incumbentName,
         rec.startDate,
         rec.endDate,
-        tenure >= 0 ? tenure : 0,
+        tenure,
+        rec.overallHireDate,
         rec.changeCount
       ]);
     });
@@ -1876,7 +1943,7 @@ function generateIncumbencyReport() {
     reportSheet = spreadsheet.insertSheet(reportSheetName);
   }
   reportSheet.clear();
-  const reportHeaders = ['Position ID', 'Job Title', 'Incumbent Name', 'Start Date', 'End Date', 'Tenure (Days)', 'Position Change Count'];
+  const reportHeaders = ['Position ID', 'Job Title', 'Incumbent Name', 'Start Date in Position', 'End Date in Position', 'Tenure (Days)', 'Overall Hire Date', 'Position Change Count'];
   reportSheet.getRange(1, 1, 1, reportHeaders.length).setValues([reportHeaders]).setFontWeight('bold');
 
   if (finalHistoryRecords.length > 0) {
@@ -1884,21 +1951,13 @@ function generateIncumbencyReport() {
   }
 
   reportSheet.getRange("D:E").setNumberFormat("yyyy-mm-dd");
+  reportSheet.getRange("G:G").setNumberFormat("yyyy-mm-dd");
   reportSheet.setFrozenRows(1);
   reportSheet.autoResizeColumns(1, reportHeaders.length);
   ui.alert(`Success! "${reportSheetName}" sheet has been updated.`);
 }
 
-/**
- * =================================================================================================
- * FINAL REWRITE v9 - calculateIncumbencyEngine
- * =================================================================================================
- * This version correctly identifies the end of a tenure by recognizing "effective-dated" events
- * (like promotions/resignations) as definitive termination points. It also correctly handles
- * subsequent "ghost" log entries that might occur for an employee after their tenure has
- * officially ended, preventing these from creating incorrect history records.
- * =================================================================================================
- */
+
 function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
   const posIdIndex = headers.indexOf('Position ID');
   const empIdIndex = headers.indexOf('Employee ID');
@@ -1907,8 +1966,10 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
   const timestampIndex = headers.indexOf('Change Timestamp');
   const effectiveDateIndex = headers.indexOf('Effective Date');
   const hireDateIndex = headers.indexOf('Date Hired');
+  const statusIndex = headers.indexOf('Status');
 
   const isFirstEverEventForEmployee = (employeeId, eventDate, allLogs) => {
+    if (!employeeId) return false;
     for (const row of allLogs) {
       const logEmpId = (row[empIdIndex] || '').toString().trim();
       if (logEmpId === employeeId) {
@@ -1941,8 +2002,9 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
         incumbentId: (row[empIdIndex] || '').toString().trim() || null,
         incumbentName: (row[nameIndex] || '').toString().trim() || 'N/A',
         jobTitle: (row[jobTitleIndex] || '').toString().trim() || 'N/A',
-        hireDate: _parseDate(row[hireDateIndex]),
-        isEffective: !!_parseDate(row[effectiveDateIndex])
+        overallHireDate: _parseDate(row[hireDateIndex]),
+        isEffective: !!_parseDate(row[effectiveDateIndex]),
+        status: (row[statusIndex] || '').toString().trim().toUpperCase()
       }))
       .filter(e => e.eventDate)
       .sort((a, b) => a.eventDate.getTime() - b.eventDate.getTime());
@@ -1957,79 +2019,65 @@ function calculateIncumbencyEngine(allLogData, headers, mainDataMap) {
         i++;
         continue;
       }
-
+      
       let startDate = startEvent.eventDate;
-      if (startEvent.hireDate && startEvent.hireDate.getTime() < startEvent.eventDate.getTime()) {
-        if (isFirstEverEventForEmployee(startEvent.incumbentId, startEvent.eventDate, allLogData)) {
-          startDate = startEvent.hireDate;
-        }
+      const isInternalMovement = ['PROMOTION', 'INTERNAL TRANSFER', 'LATERAL TRANSFER'].includes(startEvent.status);
+      const isFirstEvent = isFirstEverEventForEmployee(startEvent.incumbentId, startEvent.eventDate, allLogData);
+
+      if (!isInternalMovement && startEvent.overallHireDate && startEvent.overallHireDate.getTime() < startEvent.eventDate.getTime()) {
+        startDate = startEvent.overallHireDate;
       }
 
       let endDate = null;
-      let tenureEndingEvent = null;
       let nextEventIndex = i + 1;
 
-      for (let j = i; j < allChangeEventsForPos.length; j++) {
-        const currentEvent = allChangeEventsForPos[j];
-
-        if (currentEvent.incumbentId !== startEvent.incumbentId) {
-          endDate = currentEvent.eventDate;
-          tenureEndingEvent = currentEvent;
-          nextEventIndex = j;
-          break;
-        }
-
-        if (currentEvent.isEffective && currentEvent.incumbentId === startEvent.incumbentId) {
-          endDate = currentEvent.eventDate;
-          tenureEndingEvent = currentEvent;
-          let k = j + 1;
-          while (k < allChangeEventsForPos.length && allChangeEventsForPos[k].incumbentId === startEvent.incumbentId) {
-            k++;
-          }
-          nextEventIndex = k;
-          break;
-        }
+      // Find the last event that belongs to the current incumbent's tenure.
+      let lastEventIndexInTenure = i;
+      while (nextEventIndex < allChangeEventsForPos.length && allChangeEventsForPos[nextEventIndex].incumbentId === startEvent.incumbentId) {
+        lastEventIndexInTenure = nextEventIndex;
+        nextEventIndex++;
       }
+      
+      // The end date is the date of the last event in this tenure.
+      endDate = allChangeEventsForPos[lastEventIndexInTenure].eventDate;
 
-      if (!tenureEndingEvent) {
-        nextEventIndex = allChangeEventsForPos.length;
+      // If the employee is still the current incumbent in the live data, override the end date.
+      const liveRecord = mainDataMap.get(posId);
+      if (liveRecord && liveRecord.employeeId === startEvent.incumbentId) {
+        endDate = null; // A null endDate means 'Present'.
       }
-
-      const lastEventOfThisTenure = allChangeEventsForPos[nextEventIndex - 1];
+      
+      const lastKnownEventForIncumbent = allChangeEventsForPos.slice().reverse().find(e => e.incumbentId === startEvent.incumbentId) || startEvent;
 
       historyRecords.push({
         startDate: startDate,
         endDate: endDate,
         incumbentId: startEvent.incumbentId,
-        incumbentName: lastEventOfThisTenure.incumbentName,
-        jobTitle: lastEventOfThisTenure.jobTitle,
-        hireDate: startEvent.hireDate
+        incumbentName: lastKnownEventForIncumbent.incumbentName,
+        jobTitle: lastKnownEventForIncumbent.jobTitle,
+        overallHireDate: startEvent.overallHireDate
       });
-
+      
       i = nextEventIndex;
     }
 
-    const changeCount = historyRecords.length;
+    const changeCount = new Set(historyRecords.map(r => r.incumbentId)).size;
     historyRecords.forEach(rec => rec.changeCount = changeCount);
+
     finalHistory[posId] = historyRecords;
   }
   return finalHistory;
 }
 
-/**
- * REVISED - Fetches and formats incumbency history for the web app.
- */
+
 function getDetailedIncumbencyHistory(posId) {
   const cache = CacheService.getScriptCache();
   const cacheKey = `incumbency_history_${posId}`;
   const cachedHistory = cache.get(cacheKey);
 
   if (cachedHistory) {
-    Logger.log(`Cache HIT for Position ID: ${posId}`);
     return JSON.parse(cachedHistory);
   }
-
-  Logger.log(`Cache MISS for Position ID: ${posId}. Calculating from scratch.`);
 
   try {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -2037,58 +2085,32 @@ function getDetailedIncumbencyHistory(posId) {
     const logSheet = spreadsheet.getSheetByName('change_log_sheet');
     if (!logSheet || !mainSheet || logSheet.getLastRow() < 2) return [];
 
-    const mainData = mainSheet.getLastRow() > 1 ? mainSheet.getRange(2, 1, mainSheet.getLastRow() - 1, 3).getValues() : [];
-    const mainDataMap = new Map(mainData.map(row => [row[0], row]));
+    const mainData = mainSheet.getLastRow() > 1 ? mainSheet.getRange(2, 1, mainSheet.getLastRow() - 1, mainSheet.getLastColumn()).getValues() : [];
+    const mainHeader = mainSheet.getRange(1,1,1,mainSheet.getLastColumn()).getValues()[0];
+    const posIdHeaderIndex = mainHeader.indexOf('Position ID');
+    const empIdHeaderIndex = mainHeader.indexOf('Employee ID');
+
+    const mainDataMap = new Map(mainData.map(row => [row[posIdHeaderIndex], {employeeId: (row[empIdHeaderIndex] || '').toString().trim()}]));
 
     const allLogDataWithHeaders = logSheet.getDataRange().getValues();
     const headers = allLogDataWithHeaders.shift();
     const allLogData = allLogDataWithHeaders;
 
-    // Run the main history engine
     const allHistory = calculateIncumbencyEngine(allLogData, headers, mainDataMap);
     let positionHistory = allHistory[posId] || [];
-
-    // --- START: DATA CORRECTION AND FAILSAFE LOGIC ---
-    if (positionHistory.length > 0) {
-      const lastRecord = positionHistory[positionHistory.length - 1];
-      const liveRow = mainDataMap.get(posId);
-      const currentLiveEmployeeId = liveRow ? (liveRow[1] || '').toString().trim() : null;
-      const isCurrentlyVacant = !currentLiveEmployeeId;
-
-      // Correction 1: If the last incumbent in the history is the current, active employee,
-      // ensure their end date is null (i.e., 'Present'), overriding any erroneous log entry.
-      if (lastRecord.incumbentId && currentLiveEmployeeId && lastRecord.incumbentId === currentLiveEmployeeId && lastRecord.endDate) {
-        Logger.log(`Position ${posId} is currently held by ${currentLiveEmployeeId}, but history shows an end date. Correcting to 'Present'.`);
-        lastRecord.endDate = null;
-      }
-
-      // Correction 2 (Failsafe): If the position is actually vacant, but the history shows 'Present',
-      // find the last known event for that position and use its date as the end date.
-      if (lastRecord.endDate === null && isCurrentlyVacant) {
-        Logger.log(`Position ${posId} is vacant but history shows "Present". Applying final failsafe.`);
-        const posIdIndex = headers.indexOf('Position ID');
-        const effectiveDateIndex = headers.indexOf('Effective Date');
-        const timestampIndex = headers.indexOf('Change Timestamp');
-        
-        const allEventsForPos = allLogData
-          .filter(row => row[posIdIndex] === posId)
-          .map(row => ({ date: _parseDate(row[effectiveDateIndex]) || _parseDate(row[timestampIndex]) }))
-          .filter(event => event.date)
-          .sort((a, b) => b.date.getTime() - a.date.getTime());
-
-        if (allEventsForPos.length > 0) {
-          lastRecord.endDate = allEventsForPos[0].date;
-          Logger.log(`Failsafe applied. Corrected End Date to: ${lastRecord.endDate}`);
-        }
-      }
-    }
-    // --- END OF DATA CORRECTION AND FAILSAFE LOGIC ---
 
     const finalHistory = positionHistory
       .filter(rec => rec.incumbentId)
       .map(rec => {
         const startDate = rec.startDate;
-        const endDateForCalc = rec.endDate || new Date();
+        let endDate = rec.endDate;
+        const liveRecord = mainDataMap.get(posId);
+
+        if (liveRecord && liveRecord.employeeId === rec.incumbentId) {
+            endDate = null;
+        }
+        
+        const endDateForCalc = endDate || new Date();
 
         let tenureDays = 0;
         if (startDate && endDateForCalc) {
@@ -2108,13 +2130,13 @@ function getDetailedIncumbencyHistory(posId) {
           if (days > 0 || (years === 0 && months === 0)) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
           tenureString = parts.join(', ');
         }
-
+        
         return {
           name: rec.incumbentName,
           startDate: rec.startDate ? Utilities.formatDate(rec.startDate, Session.getScriptTimeZone(), 'yyyy-MM-dd') : 'N/A',
-          endDate: rec.endDate ? Utilities.formatDate(rec.endDate, Session.getScriptTimeZone(), 'yyyy-MM-dd') : 'Present',
+          endDate: endDate ? Utilities.formatDate(endDate, Session.getScriptTimeZone(), 'yyyy-MM-dd') : 'Present',
           tenure: tenureString,
-          employeeHireDate: rec.hireDate ? Utilities.formatDate(rec.hireDate, Session.getScriptTimeZone(), 'yyyy-MM-dd') : 'N/A',
+          employeeHireDate: rec.overallHireDate ? Utilities.formatDate(rec.overallHireDate, Session.getScriptTimeZone(), 'yyyy-MM-dd') : 'N/A',
         };
       });
 
@@ -3040,6 +3062,69 @@ function getDateOfBirth(employeeId) {
 
 // --- START: NEW PREDICTIVE INSIGHTS FUNCTION ---
 
+// --- PASTE NEW FUNCTION HERE ---
+/**
+ * Gets a list of documents for a given change request ID.
+ * @param {string} requestId The ID of the change request.
+ * @returns {Array<Object>|Object} An array of file objects {name, url} or an error object.
+ */
+function getRequestDocumentList(requestId) {
+  try {
+    if (!requestId) {
+      return { error: "Request ID is missing." };
+    }
+
+    const parentFolder = DriveApp.getFolderById(CHANGE_REQUESTS_FOLDER_ID);
+    const requestFolders = parentFolder.getFoldersByName(requestId);
+
+    if (!requestFolders.hasNext()) {
+      // If the folder doesn't exist, it might be an older request before folder creation was implemented.
+      // In that case, we can try to find a single file link in the sheet data.
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const sheet = ss.getSheetByName('Org Chart Requests');
+      if (sheet) {
+          const data = sheet.getDataRange().getValues();
+          const headers = data[0];
+          const idCol = headers.indexOf('RequestID');
+          const docCol = headers.indexOf('SupportingDocuments');
+          if (idCol > -1 && docCol > -1) {
+              for (let i = 1; i < data.length; i++) {
+                  if (data[i][idCol] === requestId) {
+                      const docUrl = data[i][docCol];
+                      if (docUrl && docUrl.startsWith('http')) {
+                          // This is likely a single file or a folder link. We can't list files,
+                          // but we can return it as a single item for the user to open.
+                          return [{ name: "Open Document Link", url: docUrl }];
+                      }
+                      break; // Found the request, stop searching.
+                  }
+              }
+          }
+      }
+      return []; // Return empty array if folder not found and no link in sheet.
+    }
+
+    const requestFolder = requestFolders.next();
+    const files = requestFolder.getFiles();
+    const fileList = [];
+
+    while (files.hasNext()) {
+      const file = files.next();
+      fileList.push({
+        name: file.getName(),
+        // Use the /preview URL for embedding in the iframe
+        url: `https://drive.google.com/file/d/${file.getId()}/preview`
+      });
+    }
+
+    return fileList;
+
+  } catch (e) {
+    Logger.log(`Error in getRequestDocumentList for ID ${requestId}: ${e.toString()}`);
+    return { error: `Server error while retrieving documents: ${e.message}` };
+  }
+}
+
 // --- START: REVISED PREDICTIVE INSIGHTS FUNCTION (v2) ---
 
 function getAttritionRiskData() {
@@ -3499,6 +3584,9 @@ function submitChangeRequest(requestData) {
     if (requestData.files && requestData.files.length > 0) {
       const parentFolder = DriveApp.getFolderById(CHANGE_REQUESTS_FOLDER_ID);
       const requestFolder = parentFolder.createFolder(requestId);
+
+      // --- FIX: Set sharing permissions to anyone with the link can view ---
+      requestFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
       
       requestData.files.forEach(file => {
         const decodedContent = Utilities.base64Decode(file.content);
@@ -3510,6 +3598,11 @@ function submitChangeRequest(requestData) {
     }
 
     const newRow = headers.map(header => {
+      // For "Hiring of a new employee (replacement for vacancy)", clear these fields
+      if (requestData.RequestType === 'Hiring of a new employee (replacement for vacancy)' && (header === 'NewEmployeeName' || header === 'NewEmployeeID')) {
+        return '';
+      }
+
       switch (header) {
         case 'RequestID':
           return requestId;
@@ -4047,22 +4140,18 @@ function getPreviewOrgChartData(requestId) {
       const newPosition = previewObjects.find(p => p.positionid === newPositionId);
 
       if (oldPosition) {
-        // oldPosition.employeeid = ''; // DO NOT CLEAR - This was the bug
-        // oldPosition.employeename = ''; // DO NOT CLEAR - This was the bug
-        // oldPosition.status = 'VACANT'; // DO NOT CHANGE STATUS
         oldPosition.isPreviewChange = true;
         oldPosition.changeType = 'VACATED BY ' + employeeName;
         changedPositionIds.add(oldPosition.positionid);
       }
 
       if (newPosition) {
-        // --- START: Corrected Preview Logic ---
-        // DO NOT simulate the move. Instead, just label the target position
-        // while preserving its current state (e.g., vacant).
+        // We don't copy the employee data to the destination for the preview.
+        // Instead, we just mark it as the destination for highlighting purposes.
+        // This shows the user the current state of the destination (e.g., VACANT).
         newPosition.isPreviewChange = true;
-        newPosition.changeType = 'TARGET POSITION FOR ' + employeeName;
+        newPosition.changeType = 'DESTINATION FOR ' + employeeName;
         changedPositionIds.add(newPosition.positionid);
-        // --- END: Corrected Preview Logic ---
       } else {
         Logger.log(`Warning: New position ${newPositionId} not found during preview generation.`);
       }
@@ -4080,7 +4169,7 @@ function getPreviewOrgChartData(requestId) {
         position.employeename = newEmployeeName;
         position.status = 'FILLED VACANCY';
         position.isPreviewChange = true;
-        position.changeType = 'Filled Vacancy';
+        position.changeType = 'Replacement of Vacancy';
         position.effectiveDate = effectiveDate ? Utilities.formatDate(new Date(effectiveDate), Session.getScriptTimeZone(), 'yyyy-MM-dd') : null;
         changedPositionIds.add(vacantPositionId);
       } else {
@@ -4124,35 +4213,94 @@ function getPreviewOrgChartData(requestId) {
     });
 
     previewObjects.forEach(p => {
-      const managerEmployeeId = (p.reportingtoid || '').toString().trim();
-      if (managerEmployeeId) {
-        // Find the manager's NEW position ID from our fresh map
-        const newManagerPositionId = newEmployeeIdToPositionIdMap.get(managerEmployeeId);
-        if (newManagerPositionId) {
-          p.managerId = newManagerPositionId;
+      const reportingToValue = (p.reportingtoid || '').toString().trim();
+      if (reportingToValue) {
+        // Check if the ID is a Position ID (contains '-') or an Employee ID.
+        if (reportingToValue.includes('-')) {
+          // It's a Position ID (for a vacant manager), use it directly.
+          p.managerId = reportingToValue;
         } else {
-      // FALLBACK: If the manager's employee ID wasn't found in the map,
-      // it could be because the 'reportingtoid' is a vacant Position ID.
-      // We'll check if it looks like a position ID (contains a hyphen)
-      // and use it directly to prevent orphan nodes.
-      if (managerEmployeeId.includes('-')) {
-        p.managerId = managerEmployeeId;
-      } else {
-        // If it doesn't look like a position ID, then break the link.
-        p.managerId = '';
-        Logger.log(`Preview Warning: Could not find new position for manager with Employee ID ${managerEmployeeId}. Breaking link for ${p.positionid}.`);
-      }
+          // It's an Employee ID, look up their new position in the map.
+          const newManagerPositionId = newEmployeeIdToPositionIdMap.get(reportingToValue);
+          if (newManagerPositionId) {
+            p.managerId = newManagerPositionId;
+          } else {
+            // The manager (by employee ID) doesn't exist or isn't in a position in this preview.
+            p.managerId = '';
+            Logger.log(`Preview Warning: Could not find new position for manager with Employee ID ${reportingToValue}. Breaking link for ${p.positionid}.`);
+          }
         }
       } else {
-        // No manager employee ID, so no manager link.
+        // No reporting ID, so no manager link.
         p.managerId = '';
       }
     });
     // --- END: NEW HIERARCHY REBUILD LOGIC ---
 
+    // --- START: NEW ORG CHART PREVIEW FILTERING ---
+    let finalPreviewObjects = previewObjects; // Default to the full chart
+    try {
+      let focusUnit = null;
+      let focusLevel = null; // e.g., 'department', 'section'
+
+      // Determine the focus unit based on request type
+      if (requestType.includes('Transfer') || requestType.includes('Promotion')) {
+        const newPosition = previewObjects.find(p => p.positionid === requestRowData['NewPositionID']);
+        if (newPosition) {
+          focusUnit = newPosition.section || newPosition.department || newPosition.group || newPosition.division;
+          focusLevel = newPosition.section ? 'section' : (newPosition.department ? 'department' : (newPosition.group ? 'group' : 'division'));
+        }
+      } else if (requestType.includes('replacement for vacancy')) {
+        const vacantPosition = previewObjects.find(p => p.positionid === requestRowData['VacantPositionID']);
+         if (vacantPosition) {
+          focusUnit = vacantPosition.section || vacantPosition.department || vacantPosition.group || vacantPosition.division;
+          focusLevel = vacantPosition.section ? 'section' : (vacantPosition.department ? 'department' : (vacantPosition.group ? 'group' : 'division'));
+        }
+      } else if (requestType.includes('newly created position')) {
+        focusUnit = requestRowData['Section'] || requestRowData['Department'] || requestRowData['Group'] || requestRowData['Division'];
+        focusLevel = requestRowData['Section'] ? 'section' : (requestRowData['Department'] ? 'department' : (requestRowData['Group'] ? 'group' : 'division'));
+      }
+
+      if (focusUnit && focusLevel) {
+        const employeesInScope = new Set();
+        const managerQueue = [];
+
+        // 1. Add all employees from the focus unit and seed the manager queue
+        previewObjects.forEach(p => {
+          if (p[focusLevel] === focusUnit) {
+            employeesInScope.add(p.positionid);
+            if (p.managerId) {
+              managerQueue.push(p.managerId);
+            }
+          }
+        });
+
+        // 2. Traverse up the management chain
+        const previewMap = new Map(previewObjects.map(p => [p.positionid, p]));
+        while(managerQueue.length > 0) {
+          const managerPosId = managerQueue.shift();
+          if (managerPosId && !employeesInScope.has(managerPosId)) {
+            employeesInScope.add(managerPosId);
+            const manager = previewMap.get(managerPosId);
+            if (manager && manager.managerId) {
+              managerQueue.push(manager.managerId);
+            }
+          }
+        }
+
+        // 3. Filter the final list
+        finalPreviewObjects = previewObjects.filter(p => employeesInScope.has(p.positionid));
+      }
+
+    } catch(filterError) {
+      Logger.log(`PREVIEW FILTER ERROR for Request ID ${requestId}: ${filterError.message}. Falling back to full org chart view.`);
+      finalPreviewObjects = previewObjects; // Fallback
+    }
+    // --- END: NEW ORG CHART PREVIEW FILTERING ---
+
     // --- FINAL DATA SANITIZATION ---
     // Ensure all objects in the array are clean for JSON serialization, especially dates.
-    const sanitizedObjects = previewObjects.map(obj => {
+    const sanitizedObjects = finalPreviewObjects.map(obj => {
       const sanitizedObj = {};
       for (const key in obj) {
         if (obj[key] instanceof Date) {
